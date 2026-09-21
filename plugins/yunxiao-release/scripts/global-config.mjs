@@ -8,8 +8,12 @@ export const resolveGlobalConfigPath = (env = process.env) => {
   const configHome = env.XDG_CONFIG_HOME && isAbsolute(env.XDG_CONFIG_HOME)
     ? env.XDG_CONFIG_HOME
     : resolve(home, '.config');
-  return resolve(configHome, 'yunxiao-release/projects.json');
+  return resolve(configHome, 'yunxiao-release');
 };
+
+export const resolveGlobalDefaultsPath = (env = process.env) => resolve(resolveGlobalConfigPath(env), 'global-defaults.json');
+export const resolveGlobalRepositoriesPath = (env = process.env) => resolve(resolveGlobalConfigPath(env), 'global-repositories.json');
+export const resolveLegacyGlobalConfigPath = (env = process.env) => resolve(resolveGlobalConfigPath(env), 'projects.json');
 
 export const normalizeRemoteUrl = (value) => {
   const remote = String(value || '').trim().replace(/\.git$/, '').replace(/\/$/, '');
@@ -38,13 +42,25 @@ const readRemoteUrl = (rootDir, remoteName) => {
 };
 
 export const readGlobalProjectConfig = (rootDir, env = process.env, remoteName = 'origin') => {
-  const filePath = resolveGlobalConfigPath(env);
-  if (!existsSync(filePath)) return { config: {}, filePath, repositoryKey: null };
-  const raw = readJson(filePath);
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('全局项目配置必须是 JSON 对象');
-  if (raw.schemaVersion !== undefined && raw.schemaVersion !== 1) throw new Error('全局项目配置 schemaVersion 必须为 1');
-  const defaults = raw.defaults ?? {};
-  const repositories = raw.repositories ?? {};
+  const defaultsPath = resolveGlobalDefaultsPath(env);
+  const repositoriesPath = resolveGlobalRepositoriesPath(env);
+  const legacyPath = resolveLegacyGlobalConfigPath(env);
+  let defaults = {};
+  let repositories = {};
+  if (existsSync(defaultsPath) || existsSync(repositoriesPath)) {
+    const rawDefaults = existsSync(defaultsPath) ? readJson(defaultsPath) : {};
+    const rawRepositories = existsSync(repositoriesPath) ? readJson(repositoriesPath) : {};
+    if (rawDefaults.schemaVersion !== undefined && rawDefaults.schemaVersion !== 1) throw new Error('全局默认配置 schemaVersion 必须为 1');
+    if (rawRepositories.schemaVersion !== undefined && rawRepositories.schemaVersion !== 1) throw new Error('全局仓库配置 schemaVersion 必须为 1');
+    const { schemaVersion: _defaultsVersion, ...defaultValues } = rawDefaults;
+    defaults = defaultValues;
+    repositories = rawRepositories.repositories ?? {};
+  } else if (existsSync(legacyPath)) {
+    const raw = readJson(legacyPath);
+    if (raw.schemaVersion !== undefined && raw.schemaVersion !== 1) throw new Error('旧全局项目配置 schemaVersion 必须为 1');
+    defaults = raw.defaults ?? {};
+    repositories = raw.repositories ?? {};
+  }
   if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults)) throw new Error('全局 defaults 必须是对象');
   if (!repositories || typeof repositories !== 'object' || Array.isArray(repositories)) throw new Error('全局 repositories 必须是对象');
   if (Object.hasOwn(defaults, 'repositoryId')) throw new Error('全局 defaults 不能配置 repositoryId');
@@ -54,5 +70,5 @@ export const readGlobalProjectConfig = (rootDir, env = process.env, remoteName =
   if (!repository || typeof repository !== 'object' || Array.isArray(repository)) {
     throw new Error(`全局仓库配置必须是对象: ${repositoryKey}`);
   }
-  return { config: { ...defaults, ...repository }, filePath, repositoryKey };
+  return { config: { ...defaults, ...repository }, defaultsPath, repositoriesPath, repositoryKey };
 };

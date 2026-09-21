@@ -1,0 +1,415 @@
+{
+  "schemaVersion": 1,
+  "repositories": {
+    "codeup.aliyun.com/supermonkey/etna": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/etna-ext": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/etna-ext-cache": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/etna-ext-wechat": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/etna-mis": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/etna-springboot": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/etna-springboot-parent": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-activity": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-activity-center": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-ads": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-aggregation-egress": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-ai": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-app": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-app-cms": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-app-search": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-app-trainer": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-base": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-box-device": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-boxcenter": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-boxcenter-client": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-budget": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-card": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-client": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-comment": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-common": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-common-lite": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-coop": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-core": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-crc": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-csc": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-data-extraction": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-device-api": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-device-center": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-device-server": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-devices": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-ehr": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-enterprise": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-feishu": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-gateway": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-im": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-img": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-integration": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-invoice": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-jdy": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-kingdee": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-manager": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-meili-search": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-message": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-meta-content": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-mis": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-mis-model": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-msg": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-openplatform": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-order": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-osc": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-passkit": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-payment": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-personal": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-promotion": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-reconciliation": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-risk-detector": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-saas-auth": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-saas-box": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-saas-client": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-saas-gateway": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-saas-strategy-engine": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-saas-trainer": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-saas-web": {
+      "projectType": "frontend",
+      "targetBranch": "develop",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-schedule": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-search": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-sensors": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-settlement": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-sgo": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-springboot": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-starlink-meta": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-ticket": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-trainer": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-trains": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-user": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-wechat-business": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-ws": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    },
+    "codeup.aliyun.com/supermonkey/monkey-wx": {
+      "projectType": "backend",
+      "targetBranch": "fat/fat",
+      "repositoryId": ""
+    }
+  }
+}

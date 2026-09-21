@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "organizationId": "60092aa88deaa14d9e02bdf5",
+  "remoteName": "origin",
+  "targetBranch": "master",
+  "reviewerMode": "ask",
+  "reviewerUserIds": [],
+  "validationCommands": [
+    "git diff --check"
+  ]
+}

@@ -10,7 +10,7 @@ description: 初始化、更新或检查任意 Git 项目的云效发版配置�
 ## 流程
 
 1. 确认当前目录是 Git 仓库，读取 remote 和适用的项目规则。
-2. 读取项目共享配置、用户级 `projects.json` 和当前 Git remote，按“项目配置 > 全局仓库配置 > 全局 defaults > 插件默认值”合并。项目文件缺失但合并结果完整时无需生成；全局 `defaults` 禁止包含 `repositoryId`。
+2. 读取项目共享配置、用户级 `global-defaults.json`、`global-repositories.json` 和当前 Git remote，按“项目配置 > 全局仓库配置 > 全局默认配置 > 插件默认值”合并。项目文件缺失但合并结果完整时无需生成；全局默认配置禁止包含 `repositoryId`。
 3. 确认当前会话真实存在云效官方 MCP 工具，并读取其 Schema。
 4. 缺少 `organizationId` 时调用 `get_current_organization_info` 和 `get_user_organizations` 准备组织候选；缺少 `repositoryId` 时从 remote URL 仅提取仓库名，用 `list_repositories` 准备仓库候选。此阶段只收集信息，不写配置，不从 remote URL 推导 ID。
 5. 检查项目成员配置和用户级 `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/member.json`；项目配置存在时优先使用。旧 Codex `.env` 成员字段仅作为迁移期兼容读取。
