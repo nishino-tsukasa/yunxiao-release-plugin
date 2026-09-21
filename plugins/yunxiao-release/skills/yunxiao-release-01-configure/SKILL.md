@@ -10,7 +10,7 @@ description: 初始化、更新或检查任意 Git 项目的云效发版配置�
 ## 流程
 
 1. 确认当前目录是 Git 仓库，读取 remote 和适用的项目规则。
-2. 读取项目共享配置。缺失时运行插件根目录的无参数 `scripts/configure-project.mjs` 生成模板；不得猜测组织 ID 或仓库 ID。
+2. 读取项目共享配置、用户级 `projects.json` 和当前 Git remote，按“项目配置 > 全局仓库配置 > 全局 defaults > 插件默认值”合并。项目文件缺失但合并结果完整时无需生成；全局 `defaults` 禁止包含 `repositoryId`。
 3. 确认当前会话真实存在云效官方 MCP 工具，并读取其 Schema。
 4. 缺少 `organizationId` 时调用 `get_current_organization_info` 和 `get_user_organizations` 准备组织候选；缺少 `repositoryId` 时从 remote URL 仅提取仓库名，用 `list_repositories` 准备仓库候选。此阶段只收集信息，不写配置，不从 remote URL 推导 ID。
 5. 检查项目成员配置和用户级 `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/member.json`；项目配置存在时优先使用。旧 Codex `.env` 成员字段仅作为迁移期兼容读取。
@@ -26,7 +26,7 @@ description: 初始化、更新或检查任意 Git 项目的云效发版配置�
 
 - 不读取、打印或写入 Token 原文。
 - 用户输入的用户 ID 只是待核对值，未通过 `get_current_user` 精确匹配前不得写入任何存储。
-- 首次安装缺少 Token 时让 Codex 用户重新运行 `npx github:FlyAboveGrass/yunxiao-release-plugin`，让 Claude Code 用户通过 `/plugin` 配置敏感 `userConfig`；Codex Token 过期或被撤销时运行 `npx github:FlyAboveGrass/yunxiao-release-plugin token`，不要要求手工编辑 `.env`。
+- 首次安装缺少 Token 时让 Codex 用户重新运行 `npx github:FlyAboveGrass/yunxiao-release-plugin`，让 Claude Code 用户通过 `/plugin` 配置敏感 `userConfig`；Codex Token 过期或被撤销时运行 `npx github:FlyAboveGrass/yunxiao-release-plugin token`，不要要求手工编辑凭据文件。
 - 只读调用不能证明写权限；将权限分为“已验证”“未验证”“缺失”，不得推断。
 - 组织成员查询不能证明代码库权限。评审人白名单必须由用户确认；当前 MCP 无法自动生成“全部有代码库权限的成员”。
 - 401、403、身份不匹配或仓库不可见时停止并给出不含认证数据的修复方法。

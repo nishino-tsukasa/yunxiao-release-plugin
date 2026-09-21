@@ -13,7 +13,7 @@ import {
   resolveUserMemberPath,
   writeUserMember,
 } from './configure-member.mjs';
-import { hasConfiguredToken, resolveCodexEnvPath, upsertToken, writeToken } from './configure-token.mjs';
+import { hasConfiguredToken, migrateLegacyToken, resolveCodexEnvPath, resolveCredentialPath, syncCodexToken, upsertToken, writeToken } from './configure-token.mjs';
 
 // 覆盖模板生成、已有配置保留、路径边界和 Token 安全写入主路径。
 const run = () => {
@@ -160,6 +160,11 @@ const run = () => {
   assert.equal(readFileSync(envPath, 'utf8'), 'OTHER=value\nYUNXIAO_ACCESS_TOKEN=new-token\n');
   assert.equal(statSync(envPath).mode & 0o777, 0o600);
   assert.equal(resolveCodexEnvPath({ CODEX_HOME: resolve(rootDir, 'codex-home') }), envPath);
+  const tokenEnv = { HOME: rootDir, CODEX_HOME: resolve(rootDir, 'codex-home'), XDG_CONFIG_HOME: resolve(rootDir, 'xdg-config') };
+  assert.equal(resolveCredentialPath(tokenEnv), resolve(rootDir, 'xdg-config/yunxiao-release/credentials.env'));
+  assert.equal(migrateLegacyToken(tokenEnv), resolveCredentialPath(tokenEnv));
+  assert.equal(hasConfiguredToken(readFileSync(resolveCredentialPath(tokenEnv), 'utf8')), true);
+  assert.equal(syncCodexToken(tokenEnv), true);
   assert.match(upsertToken('', 'token'), /^YUNXIAO_ACCESS_TOKEN=token$/m);
   assert.equal(hasConfiguredToken('YUNXIAO_ACCESS_TOKEN=\n'), false);
   assert.equal(hasConfiguredToken('YUNXIAO_ACCESS_TOKEN=token\n'), true);

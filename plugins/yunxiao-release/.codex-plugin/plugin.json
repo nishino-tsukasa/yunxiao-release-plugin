@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "云效单 MR 发版",
     "shortDescription": "通过官方 MCP 完成 MR 与合并前准备。",
-    "longDescription": "验证项目、创建云效 MR、处理评审与合并前准备，并按项目配置发布测试分支或打开生产环境人工发布入口。当前版本不提供 MR 合并能力。",
+    "longDescription": "验证项目、创建云效 MR、处理评审与合并前准备，支持项目与全局分层配置，并发布前后端 FAT 环境或打开生产环境人工发布入口。当前版本不提供 MR 合并能力。",
     "developerName": "FlyAboveGrass",
     "category": "Productivity",
     "capabilities": ["Interactive", "Write"],
@@ -17,7 +17,8 @@
       "初始化或检查当前项目的云效发版配置。",
       "验证当前分支并创建云效 MR。",
       "在当前 MR 合并前更新版本号和发版公告。",
-      "发布当前项目到测试环境或打开生产发布页面。"
+      "发布当前项目到测试环境或打开生产发布页面。",
+      "对多个前后端仓库执行 FAT Git Flow 和云效流水线部署。"
     ]
   },
   "mcpServers": "./.mcp.json"

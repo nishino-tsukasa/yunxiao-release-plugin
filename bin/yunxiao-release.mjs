@@ -11,7 +11,9 @@ const printHelp = () => {
   console.log(`Usage:
   yunxiao-release                 交互安装
   yunxiao-release configure       初始化或更新项目配置
-  yunxiao-release token [--check] 配置或检查 Codex Token`);
+  yunxiao-release global [--init|--check] 初始化或检查全局项目配置
+  yunxiao-release token [--check] 配置或检查全局 Token
+  yunxiao-release fat-flow <args> 执行前后端 FAT Git Flow 与部署`);
 };
 
 const run = (command, args) => {
@@ -39,6 +41,14 @@ const main = () => {
   }
   if (command === 'token') {
     run(process.execPath, [resolve(scriptsDir, 'configure-token.mjs'), ...args]);
+    return;
+  }
+  if (command === 'global') {
+    run(process.execPath, [resolve(scriptsDir, 'configure-global.mjs'), ...args]);
+    return;
+  }
+  if (command === 'fat-flow') {
+    run('bash', [resolve(scriptsDir, 'fat-flow/run-full-fat-flow-deploy.sh'), ...args]);
     return;
   }
   throw new Error(`未知命令: ${command}`);

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeMember, readUserMember, resolveUserMemberPath } from './configure-member.mjs';
+import { readGlobalProjectConfig } from './global-config.mjs';
 
 const requiredConfigKeys = ['organizationId', 'repositoryId'];
 const projectConfigPath = '.agents/yunxiao-release.json';
@@ -49,6 +50,10 @@ const ensureKeys = (value, keys, label) => {
     fail(`${label} 缺少字段: ${missing.join(', ')}`);
   }
 };
+
+const withoutMissingValues = (value) => Object.fromEntries(
+  Object.entries(value).filter(([, item]) => item !== undefined && item !== ''),
+);
 
 const resolveProjectPath = (rootDir, configuredPath, label) => {
   if (typeof configuredPath !== 'string' || !configuredPath || isAbsolute(configuredPath)) {
@@ -106,14 +111,19 @@ const normalizeTestDeployments = (deployments) => {
 };
 
 // 兼容最小社区配置，并在读取时补齐不会改变云端状态的默认值。
-export const readProjectConfig = (rootDir) => {
+export const readProjectConfig = (rootDir, env = process.env) => {
   const configPath = resolve(rootDir, projectConfigPath);
   const legacyConfigPath = resolve(rootDir, legacyProjectConfigPath);
   if (existsSync(configPath) && existsSync(legacyConfigPath)) fail('新旧项目共享配置同时存在，请确认保留哪一份');
   const sourcePath = existsSync(configPath) ? configPath : legacyConfigPath;
-  if (!existsSync(sourcePath)) fail(`缺少项目共享配置: ${configPath}`);
-  const rawConfig = readJson(sourcePath);
-  ensureKeys(rawConfig, requiredConfigKeys, '项目共享配置');
+  const projectConfig = existsSync(sourcePath) ? readJson(sourcePath) : {};
+  const initialGlobal = readGlobalProjectConfig(rootDir, env, projectConfig.remoteName || 'origin');
+  const remoteName = projectConfig.remoteName || initialGlobal.config.remoteName || 'origin';
+  const globalConfig = remoteName === (projectConfig.remoteName || 'origin')
+    ? initialGlobal.config
+    : readGlobalProjectConfig(rootDir, env, remoteName).config;
+  const rawConfig = { ...globalConfig, ...withoutMissingValues(projectConfig) };
+  ensureKeys(rawConfig, requiredConfigKeys, '合并后的项目配置');
   const { reviewMode: _reviewMode, ...currentConfig } = rawConfig;
   const config = { ...configDefaults, ...currentConfig };
   if (!Array.isArray(config.validationCommands) || config.validationCommands.length === 0) {
@@ -202,7 +212,7 @@ export const getCurrentMr = (rootDir, sourceBranch) => {
 
 // 项目配置覆盖用户级配置，既支持项目隔离，也让新 worktree 自动复用成员身份。
 export const checkConfig = (rootDir, env = process.env) => {
-  const config = readProjectConfig(rootDir);
+  const config = readProjectConfig(rootDir, env);
   const localConfigPath = resolveProjectPath(rootDir, config.localConfigFile, 'localConfigFile');
   if (existsSync(localConfigPath)) {
     const localConfig = normalizeMember(readJson(localConfigPath));

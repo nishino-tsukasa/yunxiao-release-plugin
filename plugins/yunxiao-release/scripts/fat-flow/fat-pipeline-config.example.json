@@ -1,0 +1,120 @@
+{
+  "branch": "fat/fat",
+  "branches": {
+    "backend": "fat/fat",
+    "frontend": "develop"
+  },
+  "frontendDeploy": {
+    "groupId": "142296",
+    "defaultBranch": "develop",
+    "defaultEnv": "fat",
+    "defaultEnvName": "default",
+    "defaultFeishuId": "",
+    "projects": {
+      "monkey-saas-web": {
+        "name": "【FAT】monkey-saas-web-nodejs",
+        "pipelineId": "",
+        "envs": {
+          "branch": "{branch}",
+          "project": "{project}",
+          "envName": "{envName}",
+          "feishuId": "{feishuId}"
+        }
+      }
+    }
+  },
+  "clientPackage": {
+    "defaultEnv": "fat",
+    "defaultFeishuId": "",
+    "skipProjects": [
+      "monkey-coop"
+    ],
+    "frameworkPipeline": {
+      "name": "[FAT] 框架基础包打包",
+      "pipelineId": "4963823",
+      "projects": [
+        "monkey-client",
+        "monkey-common-lite",
+        "monkey-common",
+        "etna-springboot-parent",
+        "etna",
+        "etna-ext-wechat",
+        "etna-ext"
+      ],
+      "envs": {
+        "branch": "{branch}",
+        "project": "{project}",
+        "env": "{env}",
+        "feishuId": "{feishuId}"
+      }
+    },
+    "javaServicePipelines": [
+      {
+        "name": "[FAT] java服务Client打包-1",
+        "pipelineId": "",
+        "projects": [],
+        "envs": {
+          "branch": "{branch}",
+          "project": "{project}",
+          "env": "{env}",
+          "feishuId": "{feishuId}"
+        }
+      },
+      {
+        "name": "[FAT] java服务Client打包-2",
+        "pipelineId": "",
+        "projects": [],
+        "envs": {
+          "branch": "{branch}",
+          "project": "{project}",
+          "env": "{env}",
+          "feishuId": "{feishuId}"
+        }
+      },
+      {
+        "name": "[FAT] java服务Client打包-3",
+        "pipelineId": "",
+        "projects": [],
+        "envs": {
+          "branch": "{branch}",
+          "project": "{project}",
+          "env": "{env}",
+          "feishuId": "{feishuId}"
+        }
+      },
+      {
+        "name": "[FAT] java服务Client打包-4",
+        "pipelineId": "",
+        "projects": [],
+        "envs": {
+          "branch": "{branch}",
+          "project": "{project}",
+          "env": "{env}",
+          "feishuId": "{feishuId}"
+        }
+      }
+    ]
+  },
+  "serverDeploy": {
+    "defaultEnv": "fat",
+    "skipProjects": [
+      "monkey-client",
+      "monkey-common-lite",
+      "monkey-common",
+      "etna-springboot-parent",
+      "etna",
+      "etna-ext-wechat",
+      "etna-ext"
+    ],
+    "projects": {
+      "monkey-order": {
+        "name": "[FAT] monkey-order-jdk17-vpc",
+        "pipelineId": "",
+        "envs": {
+          "branch": "{branch}",
+          "env": "{env}"
+        }
+      }
+    }
+  }
+}

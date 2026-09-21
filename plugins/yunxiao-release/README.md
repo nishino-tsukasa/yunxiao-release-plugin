@@ -25,7 +25,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin
 
 建议使用用户级安装：同一宿主的多个项目可共享插件，每个项目仍通过 `.agents/yunxiao-release.json` 保存独立配置。一键安装默认使用用户级作用域。
 
-选择 Codex 时，安装脚本会复用或交互式读取 `YUNXIAO_ACCESS_TOKEN`，保存到 `${CODEX_HOME:-$HOME/.codex}/.env`，然后安装插件。
+选择 Codex 时，安装脚本会复用或交互式读取 `YUNXIAO_ACCESS_TOKEN`，以 `~/.config/yunxiao-release/credentials.env` 为固定来源，并同步到当前 Codex Home 供 MCP 启动时读取。旧 `${CODEX_HOME:-$HOME/.codex}/.env` Token 会自动迁移。
 
 选择 Claude Code 时，插件安装到用户级作用域。启动 Claude Code 后，先运行 `/plugin configure yunxiao-release@yunxiao-release-community` 配置 Token。
 
@@ -48,6 +48,30 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 该命令保留已有配置值，只补齐缺少的默认字段。
 
 ## 项目配置
+
+配置按字段使用以下优先级：项目 `.agents/yunxiao-release.json` > 全局仓库配置 > 全局默认配置 > 插件内置默认值。项目配置可以只保留需要覆盖的字段。
+
+全局配置位于 `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/projects.json`：
+
+```json
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "organizationId": "组织 ID",
+    "targetBranch": "master",
+    "reviewerMode": "ask",
+    "reviewerUserIds": []
+  },
+  "repositories": {
+    "codeup.aliyun.com/supermonkey/monkey-core": {
+      "repositoryId": "代码库 ID",
+      "targetBranch": "fat/fat"
+    }
+  }
+}
+```
+
+仓库键由 Git remote 标准化得到。`repositoryId` 只能放在项目配置或具体仓库项中，不能放入 `defaults`。
 
 共享配置位于 `.agents/yunxiao-release.json`：
 
@@ -105,6 +129,10 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 
 项目级配置优先于用户级配置。用户级配置可供 Codex、Claude Code 和同一用户的多个 worktree 共用。
 
+## 前后端 FAT 发版
+
+`yunxiao-release fat-flow` 支持多个仓库的固定 FAT 流程：名称包含 `-web` 的项目合入 `develop` 并执行前端流水线；其他项目合入 `fat/fat`，再执行后端 client 打包与 server 部署。流水线映射由 `scripts/fat-flow/fat-pipeline-config.json` 管理。
+
 推荐使用配置 Skill 生成，内容如下：
 
 ```json
@@ -157,6 +185,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin token --check
 | 04 | 处理评论 | `$yunxiao-release:yunxiao-release-04-fix-review-comments` | `/yunxiao-release:yunxiao-release-04-fix-review-comments` | 分析并处理当前 MR 的未解决评论。 |
 | 05 | 云效 MR 合并前准备 | `$yunxiao-release:yunxiao-release-05-finalize` | `/yunxiao-release:yunxiao-release-05-finalize` | 按配置更新版本号、发版资料，验证并在必要时推送到同一 MR，等待人工合并。 |
 | — | 环境发布 | `$yunxiao-release:yunxiao-release-deploy-environment` | `/yunxiao-release:yunxiao-release-deploy-environment` | 发布一个测试环境，或返回生产环境人工发布入口。 |
+| — | FAT Git Flow | `$yunxiao-release:yunxiao-release-fat-flow` | `/yunxiao-release:yunxiao-release-fat-flow` | 多仓库前后端分支合入及 FAT 流水线部署。 |
 
 创建 MR 时若远端目标分支尚未合入当前分支，插件会自动普通合入并非强制推送源分支，不再额外确认；工作区不干净、合并冲突或推送校验失败时停止。
 

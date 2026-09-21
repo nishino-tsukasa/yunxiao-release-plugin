@@ -7,6 +7,8 @@
 | 项目共享配置 | `.agents/yunxiao-release.json` | 提交；Codex 与 Claude Code 共用 |
 | 项目成员配置 | `.agents/yunxiao-release.local.json` | 忽略；Codex 与 Claude Code 共用 |
 | 用户级成员配置 | `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/member.json` | 不在项目中；Codex 与 Claude Code 共用 |
+| 用户级项目配置 | `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/projects.json` | 全局 defaults 与按 remote 区分的仓库配置 |
+| 用户级 Token | `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/credentials.env` | 固定凭据来源；权限 `600` |
 | MR 运行状态 | `.agents/runtime/yunxiao-release-mr.json` | 忽略；Codex 与 Claude Code 共用 |
 | 评论处理文档 | `.agents/runtime/yunxiao-release-comments.md` | 忽略；Codex 与 Claude Code 共用 |
 

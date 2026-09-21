@@ -3,6 +3,9 @@
   "version": "0.8.4",
   "description": "Codex 和 Claude Code 的云效单 MR 与环境发布插件安装器。",
   "type": "module",
+  "scripts": {
+    "test": "bash ./test.sh"
+  },
   "bin": {
     "yunxiao-release": "bin/yunxiao-release.mjs"
   },
