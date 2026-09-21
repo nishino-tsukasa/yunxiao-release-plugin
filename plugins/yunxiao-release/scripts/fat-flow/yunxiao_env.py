@@ -27,11 +27,12 @@ def config_home() -> Path:
 
 
 def read_global_defaults() -> dict[str, Any]:
-    path = config_home() / "yunxiao-release" / "global-defaults.json"
+    path = config_home() / "yunxiao-release" / "projects.json"
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {key: value for key, value in data.items() if key != "schemaVersion"}
+    defaults = data.get("defaults", {})
+    return defaults if isinstance(defaults, dict) else {}
 
 
 def read_global_token() -> str | None:
