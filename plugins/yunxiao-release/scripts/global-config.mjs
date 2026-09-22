@@ -16,7 +16,7 @@ export const resolveGlobalRepositoriesPath = (env = process.env) => resolve(reso
 export const resolveLegacyGlobalConfigPath = (env = process.env) => resolve(resolveGlobalConfigDir(env), 'projects.json');
 
 export const normalizeRemoteUrl = (value) => {
-  const remote = String(value || '').trim().replace(/\.git$/, '').replace(/\/$/, '');
+  const remote = String(value || '').trim().replace(/\/$/, '').replace(/\.git$/, '');
   if (!remote) return null;
   const scpMatch = remote.match(/^[^@\s]+@([^:\s]+):(.+)$/);
   if (scpMatch) return `${scpMatch[1].toLowerCase()}/${scpMatch[2].replace(/^\/+/, '')}`;
@@ -64,13 +64,22 @@ const readRemoteUrl = (rootDir, remoteName) => {
   return result.status === 0 ? result.stdout.trim() : '';
 };
 
-export const readGlobalProjectConfig = (rootDir, env = process.env, remoteName = 'origin') => {
+const listRemoteNames = (rootDir) => {
+  const result = spawnSync('git', ['remote'], { cwd: rootDir, encoding: 'utf8' });
+  return result.status === 0 ? result.stdout.split(/\r?\n/).filter(Boolean) : [];
+};
+
+export const readGlobalProjectConfig = (rootDir, env = process.env, remoteName = '') => {
   const global = readGlobalConfigFiles(env);
-  const effectiveRemoteName = remoteName || global.defaults.remoteName || 'origin';
-  const repositoryKey = normalizeRemoteUrl(readRemoteUrl(rootDir, effectiveRemoteName));
+  const configuredRemote = remoteName || global.defaults.remoteName || '';
+  const candidates = configuredRemote ? [configuredRemote] : listRemoteNames(rootDir);
+  const matches = candidates.map((name) => ({ name, key: normalizeRemoteUrl(readRemoteUrl(rootDir, name)) }))
+    .filter(({ key }) => key && Object.hasOwn(global.repositories, key));
+  if (matches.length > 1) throw new Error('多个 Git remote 命中全局仓库配置，请显式配置 remoteName');
+  const repositoryKey = matches[0]?.key ?? null;
   const repository = repositoryKey ? global.repositories[repositoryKey] ?? {} : {};
   if (!repository || typeof repository !== 'object' || Array.isArray(repository)) {
     throw new Error(`全局仓库配置必须是对象: ${repositoryKey}`);
   }
-  return { config: { ...global.defaults, ...repository }, repositoryKey, ...global };
+  return { config: { ...global.defaults, ...repository }, repositoryKey, remoteName: matches[0]?.name ?? configuredRemote, ...global };
 };

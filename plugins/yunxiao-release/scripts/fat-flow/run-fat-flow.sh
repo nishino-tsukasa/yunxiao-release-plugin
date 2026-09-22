@@ -6,12 +6,13 @@ SCRIPT_STEP=""
 SCRIPT_REPO=""
 SCRIPT_BRANCH=""
 SCRIPT_ORIGINAL_BRANCH=""
-SCRIPT_PROJECT_KIND=""
 SCRIPT_TARGET_BRANCH=""
+SCRIPT_REMOTE_NAME=""
+SCRIPT_COMMIT_PATTERN=""
 SCRIPT_VERBOSE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VALIDATE_SCRIPT="${SCRIPT_DIR}/validate-commit-message.sh"
-source "${SCRIPT_DIR}/project-kind.sh"
+CONFIG_HELPER="${SCRIPT_DIR}/fat_flow_config.py"
 
 # 展示脚本用法，避免调用方传参错误时无从排查。
 usage() {
@@ -128,21 +129,17 @@ ensure_repo_exists() {
   if [[ "$(git -C "$SCRIPT_REPO" rev-parse --is-inside-work-tree 2>/dev/null || true)" != "true" ]]; then
     fail "目标目录不是 Git 仓库"
   fi
-  if [[ ! -x "$VALIDATE_SCRIPT" ]]; then
-    fail "提交信息校验脚本不存在或不可执行"
+  if [[ ! -x "$VALIDATE_SCRIPT" || ! -f "$CONFIG_HELPER" ]]; then
+    fail "FAT 配置或提交校验脚本不存在"
   fi
 }
 
-# 依据仓库名识别项目类型；名称包含 -web 的项目走前端发版分支。
-resolve_project_flow() {
-  SCRIPT_STEP="resolve_project_flow"
-  if is_frontend_repo "$SCRIPT_REPO"; then
-    SCRIPT_PROJECT_KIND="frontend"
-    SCRIPT_TARGET_BRANCH="develop"
-  else
-    SCRIPT_PROJECT_KIND="backend"
-    SCRIPT_TARGET_BRANCH="fat/fat"
-  fi
+# 从当前仓库的全局配置读取完整 FAT 参数，不从名称或分支约定推断。
+load_project_settings() {
+  SCRIPT_STEP="load_project_settings"
+  SCRIPT_TARGET_BRANCH="$(python3 "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field fatTargetBranch)" || fail "读取 FAT 目标分支失败"
+  SCRIPT_REMOTE_NAME="$(python3 "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field remoteName)" || fail "读取 Git remote 失败"
+  SCRIPT_COMMIT_PATTERN="$(python3 "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field commitMessagePattern)" || fail "读取提交规则失败"
 }
 
 # 脚本只接管“已干净仓库”的固定流程，未提交改动交给上层 skill 判断。
@@ -181,8 +178,8 @@ validate_source_branch_commits() {
 
   SCRIPT_STEP="validate_source_branch_commits"
 
-  if git -C "$SCRIPT_REPO" ls-remote --exit-code --heads origin "$SCRIPT_BRANCH" >/dev/null 2>&1; then
-    commit_range="origin/${SCRIPT_BRANCH}..${SCRIPT_BRANCH}"
+  if git -C "$SCRIPT_REPO" ls-remote --exit-code --heads "$SCRIPT_REMOTE_NAME" "$SCRIPT_BRANCH" >/dev/null 2>&1; then
+    commit_range="${SCRIPT_REMOTE_NAME}/${SCRIPT_BRANCH}..${SCRIPT_BRANCH}"
     commit_list="$(git -C "$SCRIPT_REPO" rev-list "$commit_range")"
     if [[ -z "$commit_list" ]]; then
       log_info "源分支没有待推送 commit，跳过源分支提交信息校验"
@@ -194,15 +191,15 @@ validate_source_branch_commits() {
 
   while IFS= read -r commit_id; do
     [[ -z "$commit_id" ]] && continue
-    run_validator --repo "$SCRIPT_REPO" --commit "$commit_id" --kind "$SCRIPT_PROJECT_KIND" || fail "源分支存在不合规提交信息: ${commit_id}"
+    run_validator --repo "$SCRIPT_REPO" --commit "$commit_id" --pattern "$SCRIPT_COMMIT_PATTERN" || fail "源分支存在不合规提交信息: ${commit_id}"
   done <<< "$commit_list"
 }
 
 # 先同步源分支；如果远程不存在同名分支，则初始化 upstream 后再继续推送。
 sync_source_branch() {
   SCRIPT_STEP="pull_source_branch"
-  if git -C "$SCRIPT_REPO" ls-remote --exit-code --heads origin "$SCRIPT_BRANCH" >/dev/null 2>&1; then
-    run_git pull --no-rebase origin "$SCRIPT_BRANCH" || fail "拉取同名源分支失败"
+  if git -C "$SCRIPT_REPO" ls-remote --exit-code --heads "$SCRIPT_REMOTE_NAME" "$SCRIPT_BRANCH" >/dev/null 2>&1; then
+    run_git pull --no-rebase "$SCRIPT_REMOTE_NAME" "$SCRIPT_BRANCH" || fail "拉取同名源分支失败"
   else
     log_info "远程不存在同名源分支，将在提交信息校验通过后初始化 upstream"
   fi
@@ -210,7 +207,7 @@ sync_source_branch() {
   validate_source_branch_commits
 
   SCRIPT_STEP="push_source_branch"
-  run_git push -u origin "$SCRIPT_BRANCH" || fail "推送源分支失败"
+  run_git push -u "$SCRIPT_REMOTE_NAME" "$SCRIPT_BRANCH" || fail "推送源分支失败"
 }
 
 # 确保本地存在目标发版分支；如果不存在，则从远端目标分支建立跟踪分支。
@@ -219,8 +216,8 @@ ensure_target_branch_exists() {
   if git -C "$SCRIPT_REPO" show-ref --verify --quiet "refs/heads/${SCRIPT_TARGET_BRANCH}"; then
     return
   fi
-  run_git fetch origin "$SCRIPT_TARGET_BRANCH" || fail "拉取远程 ${SCRIPT_TARGET_BRANCH} 失败"
-  run_git checkout -B "$SCRIPT_TARGET_BRANCH" --track "origin/${SCRIPT_TARGET_BRANCH}" || fail "创建本地 ${SCRIPT_TARGET_BRANCH} 跟踪分支失败"
+  run_git fetch "$SCRIPT_REMOTE_NAME" "$SCRIPT_TARGET_BRANCH" || fail "拉取远程 ${SCRIPT_TARGET_BRANCH} 失败"
+  run_git checkout -B "$SCRIPT_TARGET_BRANCH" --track "${SCRIPT_REMOTE_NAME}/${SCRIPT_TARGET_BRANCH}" || fail "创建本地 ${SCRIPT_TARGET_BRANCH} 跟踪分支失败"
   run_git checkout "$SCRIPT_BRANCH" || fail "创建目标分支后切回源分支失败"
 }
 
@@ -231,8 +228,8 @@ validate_target_branch_commits() {
 
   SCRIPT_STEP="validate_target_branch_commits"
 
-  if git -C "$SCRIPT_REPO" ls-remote --exit-code --heads origin "$SCRIPT_TARGET_BRANCH" >/dev/null 2>&1; then
-    commit_list="$(git -C "$SCRIPT_REPO" rev-list "origin/${SCRIPT_TARGET_BRANCH}..${SCRIPT_TARGET_BRANCH}")"
+  if git -C "$SCRIPT_REPO" ls-remote --exit-code --heads "$SCRIPT_REMOTE_NAME" "$SCRIPT_TARGET_BRANCH" >/dev/null 2>&1; then
+    commit_list="$(git -C "$SCRIPT_REPO" rev-list "${SCRIPT_REMOTE_NAME}/${SCRIPT_TARGET_BRANCH}..${SCRIPT_TARGET_BRANCH}")"
   else
     commit_list="$(git -C "$SCRIPT_REPO" rev-parse "$SCRIPT_TARGET_BRANCH")"
   fi
@@ -244,7 +241,7 @@ validate_target_branch_commits() {
 
   while IFS= read -r commit_id; do
     [[ -z "$commit_id" ]] && continue
-    run_validator --repo "$SCRIPT_REPO" --commit "$commit_id" --kind "$SCRIPT_PROJECT_KIND" || fail "${SCRIPT_TARGET_BRANCH} 存在不合规提交信息: ${commit_id}"
+    run_validator --repo "$SCRIPT_REPO" --commit "$commit_id" --pattern "$SCRIPT_COMMIT_PATTERN" || fail "${SCRIPT_TARGET_BRANCH} 存在不合规提交信息: ${commit_id}"
   done <<< "$commit_list"
 }
 
@@ -254,7 +251,7 @@ merge_into_target() {
   run_git checkout "$SCRIPT_TARGET_BRANCH" || fail "切换 ${SCRIPT_TARGET_BRANCH} 失败"
 
   SCRIPT_STEP="pull_target_branch"
-  run_git pull --no-rebase origin "$SCRIPT_TARGET_BRANCH" || fail "拉取 ${SCRIPT_TARGET_BRANCH} 失败"
+  run_git pull --no-rebase "$SCRIPT_REMOTE_NAME" "$SCRIPT_TARGET_BRANCH" || fail "拉取 ${SCRIPT_TARGET_BRANCH} 失败"
 
   SCRIPT_STEP="merge_source_into_target"
   run_git merge --no-ff --no-edit "$SCRIPT_BRANCH" || fail "合并源分支到 ${SCRIPT_TARGET_BRANCH} 失败"
@@ -262,22 +259,22 @@ merge_into_target() {
   validate_target_branch_commits
 
   SCRIPT_STEP="push_target_branch"
-  run_git push origin "$SCRIPT_TARGET_BRANCH" || fail "推送 ${SCRIPT_TARGET_BRANCH} 失败"
+  run_git push "$SCRIPT_REMOTE_NAME" "$SCRIPT_TARGET_BRANCH" || fail "推送 ${SCRIPT_TARGET_BRANCH} 失败"
 }
 
 # 成功收尾时切回源分支，并输出便于 skill 汇总的结果行。
 finish_successfully() {
   SCRIPT_STEP="restore_source_branch"
   run_git checkout "$SCRIPT_BRANCH" || fail "成功后切回源分支失败"
-  printf 'RESULT status=success repo=%s kind=%s source_branch=%s target_branch=%s final_branch=%s\n' \
-    "$SCRIPT_REPO" "$SCRIPT_PROJECT_KIND" "$SCRIPT_BRANCH" "$SCRIPT_TARGET_BRANCH" "$SCRIPT_BRANCH"
+  printf 'RESULT status=success repo=%s source_branch=%s target_branch=%s final_branch=%s\n' \
+    "$SCRIPT_REPO" "$SCRIPT_BRANCH" "$SCRIPT_TARGET_BRANCH" "$SCRIPT_BRANCH"
 }
 
 # 主流程只负责串联固定步骤，不在这里混入额外推理逻辑。
 main() {
   parse_args "$@"
   ensure_repo_exists
-  resolve_project_flow
+  load_project_settings
   ensure_clean_worktree
   remember_original_branch
   checkout_source_branch

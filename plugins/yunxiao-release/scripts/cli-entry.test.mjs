@@ -28,7 +28,7 @@ const run = () => {
   assert.equal(projectResult.status, 0, projectResult.stderr);
   assert.match(projectResult.stdout, /项目配置已写入/);
   const projectConfig = JSON.parse(readFileSync(resolve(projectDir, '.agents/yunxiao-release.json')));
-  assert.equal(projectConfig.targetBranch, 'master');
+  assert.equal(projectConfig.targetBranch, undefined);
   assert.equal(projectConfig.reviewerMode, 'ask');
   assert.deepEqual(projectConfig.reviewerUserIds, []);
 
@@ -105,7 +105,7 @@ const run = () => {
   execFileSync('git', ['init', cliProject], { stdio: 'ignore' });
   const configureResult = spawnSync('node', [publicCli, 'configure'], { cwd: cliProject, encoding: 'utf8' });
   assert.equal(configureResult.status, 0, configureResult.stderr);
-  assert.equal(JSON.parse(readFileSync(resolve(cliProject, '.agents/yunxiao-release.json'))).targetBranch, 'master');
+  assert.equal(JSON.parse(readFileSync(resolve(cliProject, '.agents/yunxiao-release.json'))).targetBranch, undefined);
 
   rmSync(rootDir, { recursive: true, force: true });
   console.log('cli entry self-test passed');

@@ -7,20 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { normalizeMember, readUserMember, resolveUserMemberPath } from './configure-member.mjs';
 import { readGlobalProjectConfig } from './global-config.mjs';
 
-const requiredConfigKeys = ['organizationId', 'repositoryId'];
+const requiredConfigKeys = [
+  'organizationId', 'repositoryId', 'remoteName', 'targetBranch', 'reviewerMode', 'reviewerUserIds',
+  'versionFile', 'announcementFile', 'localConfigFile', 'runtimeFile', 'commentsFile',
+  'validationCommands', 'testDeployments',
+];
 const projectConfigPath = '.agents/yunxiao-release.json';
 const legacyProjectConfigPath = '.codex/yunxiao-release.json';
-const configDefaults = {
-  remoteName: 'origin',
-  targetBranch: 'master',
-  versionFile: 'package.json',
-  announcementFile: null,
-  localConfigFile: '.agents/yunxiao-release.local.json',
-  runtimeFile: '.agents/runtime/yunxiao-release-mr.json',
-  commentsFile: '.agents/runtime/yunxiao-release-comments.md',
-  validationCommands: ['git diff --check'],
-  testDeployments: [],
-};
 const requiredRecordKeys = [
   'mrId',
   'title',
@@ -110,30 +103,22 @@ const normalizeTestDeployments = (deployments) => {
   });
 };
 
-// 兼容最小社区配置，并在读取时补齐不会改变云端状态的默认值。
+// 合并项目与全局配置；发布相关字段必须由配置提供。
 export const readProjectConfig = (rootDir, env = process.env) => {
   const configPath = resolve(rootDir, projectConfigPath);
   const legacyConfigPath = resolve(rootDir, legacyProjectConfigPath);
   if (existsSync(configPath) && existsSync(legacyConfigPath)) fail('新旧项目共享配置同时存在，请确认保留哪一份');
   const sourcePath = existsSync(configPath) ? configPath : legacyConfigPath;
   const projectConfig = existsSync(sourcePath) ? readJson(sourcePath) : {};
-  const initialGlobal = readGlobalProjectConfig(rootDir, env, projectConfig.remoteName || 'origin');
-  const remoteName = projectConfig.remoteName || initialGlobal.config.remoteName || 'origin';
-  const globalConfig = remoteName === (projectConfig.remoteName || 'origin')
+  const initialGlobal = readGlobalProjectConfig(rootDir, env, projectConfig.remoteName || '');
+  const remoteName = projectConfig.remoteName || initialGlobal.config.remoteName || initialGlobal.remoteName;
+  const globalConfig = remoteName === initialGlobal.remoteName || remoteName === initialGlobal.config.remoteName
     ? initialGlobal.config
     : readGlobalProjectConfig(rootDir, env, remoteName).config;
   const rawConfig = { ...globalConfig, ...withoutMissingValues(projectConfig) };
   ensureKeys(rawConfig, requiredConfigKeys, '合并后的项目配置');
   const { reviewMode: _reviewMode, ...currentConfig } = rawConfig;
-  const config = { ...configDefaults, ...currentConfig };
-  const releaseFrontendGroups = new Set(['saas', 'cms', 'starlink', 'enterprise']);
-  const policyProjectType = globalConfig.projectType || projectConfig.projectType;
-  const policyProjectGroup = globalConfig.projectGroup || projectConfig.projectGroup;
-  const requiresRelease = policyProjectType === 'backend'
-    || (policyProjectType === 'frontend' && releaseFrontendGroups.has(policyProjectGroup));
-  if (requiresRelease && config.targetBranch !== 'release') {
-    fail('当前项目的 MR targetBranch 必须是 release');
-  }
+  const config = currentConfig;
   if (!Array.isArray(config.validationCommands) || config.validationCommands.length === 0) {
     fail('validationCommands 必须是非空数组');
   }

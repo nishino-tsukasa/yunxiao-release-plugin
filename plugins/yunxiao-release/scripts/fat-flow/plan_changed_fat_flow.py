@@ -15,29 +15,29 @@ from typing import Any
 
 from yunxiao_env import require_yunxiao_runtime, resolve_organization_id
 from yunxiao_env import run_devops
+from fat_flow_config import load_config, project_config
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_CONFIG = SCRIPT_DIR / "fat-pipeline-config.json"
-DEFAULT_EXAMPLE_CONFIG = SCRIPT_DIR / "fat-pipeline-config.example.json"
 DEFAULT_OUTPUT = SCRIPT_DIR / "output" / "changed-fat-flow-plan.json"
 
 
 def parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
     parser = argparse.ArgumentParser(description="生成或执行 FAT client 打包与 server 部署流水线计划。")
-    parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="流水线映射配置文件。")
+    parser.add_argument("--defaults-config", help="全局默认配置文件；默认读取 XDG 配置目录。")
+    parser.add_argument("--repositories-config", help="全局仓库配置文件；默认读取 XDG 配置目录。")
     parser.add_argument("--projects-root", default=str(Path.cwd()), help="包含多个项目仓库的根目录。")
-    parser.add_argument("--base-ref", default="origin/fat/fat", help="用于判断改动的基准 ref。")
+    parser.add_argument("--base-ref", help="扫描本地改动时使用的显式基准 ref。")
     parser.add_argument("--projects", help="显式指定项目，逗号分隔；指定后不扫描本地 git 改动。")
     parser.add_argument("--client-projects", help="显式指定需要打 client 包的项目，逗号分隔；留空表示本次部署无需打任何 client 包。")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="计划输出文件。")
     parser.add_argument("--run", action="store_true", help="实际触发云效流水线；默认只生成计划。")
     parser.add_argument("--skip-server", action="store_true", help="只打 client 包，不生成 server 部署步骤。")
-    parser.add_argument("--poll-interval", type=int, default=10, help="流水线状态轮询间隔秒数，默认 10。")
-    parser.add_argument("--client-initial-wait", type=int, default=60, help="client 包触发后首次查询前的等待秒数，默认 60。")
-    parser.add_argument("--client-timeout", type=int, default=600, help="单个 client 打包流水线最大等待秒数，默认 600。")
-    parser.add_argument("--server-timeout", type=int, default=1800, help="单个 server 部署流水线最大等待秒数，默认 1800。")
+    parser.add_argument("--poll-interval", type=int, help="覆盖配置中的流水线状态轮询间隔。")
+    parser.add_argument("--client-initial-wait", type=int, help="覆盖配置中的 client 首次查询等待时间。")
+    parser.add_argument("--client-timeout", type=int, help="覆盖配置中的 client 超时时间。")
+    parser.add_argument("--server-timeout", type=int, help="覆盖配置中的 server 超时时间。")
     parser.add_argument("--verbose", action="store_true", help="输出详细执行日志。")
     return parser.parse_args()
 
@@ -69,13 +69,6 @@ def parse_devops_output(raw_output: str) -> Any:
         if content.isdigit():
             return int(content)
         return {"raw": content}
-
-
-def load_config(path: Path) -> dict[str, Any]:
-    """读取流水线映射配置。"""
-    if not path.exists():
-        raise FileNotFoundError(f"缺少配置文件：{path}，请先复制 {DEFAULT_EXAMPLE_CONFIG.name} 并补充流水线映射。")
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def list_git_projects(root: Path) -> list[Path]:
@@ -122,19 +115,17 @@ def render_envs(template: dict[str, str], project: str, branch: str, env: str, e
     return {key: render_value(str(value), project, branch, env, env_name, feishu_id) for key, value in template.items()}
 
 
-def is_frontend_project(project: str) -> bool:
-    """按项目命名约定识别前端项目；项目名包含 -web 即视为前端。"""
-    return "-web" in project
+def uses_frontend_deploy(project: str, config: dict[str, Any]) -> bool:
+    """读取仓库显式配置，判断应使用哪类部署阶段。"""
+    return project_config(project, config).get("projectType") == "frontend"
 
 
 def resolve_target_branch(project: str, config: dict[str, Any]) -> str:
     """选择项目在 FAT 流程中实际部署的目标分支。"""
-    branches = config.get("branches", {})
-    if is_frontend_project(project):
-        frontend_branch = branches.get("frontend")
-        frontend_config = config.get("frontendDeploy", {})
-        return str(frontend_config.get("defaultBranch") or frontend_branch or "develop")
-    return str(branches.get("backend") or config.get("branch") or "fat/fat")
+    target = project_config(project, config).get("fatTargetBranch")
+    if not isinstance(target, str) or not target:
+        raise ValueError(f"仓库缺少 fatTargetBranch：{project}")
+    return target
 
 
 def available_client_pipelines(project: str, config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -155,7 +146,7 @@ def available_client_pipelines(project: str, config: dict[str, Any]) -> list[dic
 def build_client_step(project: str, pipeline: dict[str, Any], config: dict[str, Any], branch: str) -> tuple[dict[str, Any] | None, str | None]:
     """按指定流水线为单个项目生成 client 打包步骤。"""
     client_config = config.get("clientPackage", {})
-    env = str(client_config.get("defaultEnv") or "fat")
+    env = str(client_config["defaultEnv"])
     feishu_id = str(client_config.get("defaultFeishuId") or "")
     step = build_flow_step(project, branch, env, env, feishu_id, pipeline, "client-package")
     return step, None if step["readyToRun"] else f"项目 {project} 的 client 打包流水线 {step['pipelineName']} 未配置 pipelineId"
@@ -169,21 +160,21 @@ def build_server_step(project: str, config: dict[str, Any], branch: str) -> tupl
     project_config = server_config.get("projects", {}).get(project)
     if not project_config:
         return None, f"项目 {project} 未配置 server 部署流水线映射"
-    env = str(project_config.get("env") or server_config.get("defaultEnv") or "fat")
+    env = str(project_config.get("env") or server_config["defaultEnv"])
     feishu_id = str(project_config.get("feishuId") or "")
     step = build_flow_step(project, branch, env, env, feishu_id, project_config, "server-deploy")
     return step, None if step["readyToRun"] else f"项目 {project} 的 server 部署流水线 {step['pipelineName']} 未配置 pipelineId"
 
 
 def build_frontend_step(project: str, config: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-    """为前端项目生成 develop 分支上的 FAT 部署步骤。"""
+    """按仓库配置生成前置部署步骤。"""
     frontend_config = config.get("frontendDeploy", {})
     project_config = frontend_config.get("projects", {}).get(project)
     if not project_config:
         return None, f"项目 {project} 未配置 frontend FAT 部署流水线映射"
     branch = resolve_target_branch(project, config)
-    env = str(project_config.get("env") or frontend_config.get("defaultEnv") or "fat")
-    env_name = str(project_config.get("envName") or frontend_config.get("defaultEnvName") or "default")
+    env = str(project_config.get("env") or frontend_config["defaultEnv"])
+    env_name = str(project_config.get("envName") or frontend_config["defaultEnvName"])
     feishu_id = str(project_config.get("feishuId") or frontend_config.get("defaultFeishuId") or "")
     step = build_flow_step(project, branch, env, env_name, feishu_id, project_config, "frontend-deploy")
     return step, None if step["readyToRun"] else f"项目 {project} 的 frontend 部署流水线 {step['pipelineName']} 未配置 pipelineId"
@@ -223,7 +214,7 @@ def build_plan(projects: list[str], config: dict[str, Any], skip_server: bool, e
     unresolved: list[str] = []
     client_pipeline_load: dict[str, int] = {}
     for project in projects:
-        if is_frontend_project(project):
+        if uses_frontend_deploy(project, config):
             if not skip_server:
                 frontend_step, frontend_error = build_frontend_step(project, config)
                 if frontend_step:
@@ -258,7 +249,7 @@ def build_plan(projects: list[str], config: dict[str, Any], skip_server: bool, e
         "stages": [
             {
                 "name": "frontend-deploy",
-                "description": "部署前端项目 develop 分支的 FAT 流水线",
+                "description": "执行配置的前置部署流水线",
                 "steps": frontend_steps,
             },
             {
@@ -551,18 +542,28 @@ def main() -> None:
     args = parse_args()
     projects: list[str] = []
     try:
-        config = load_config(Path(args.config))
+        config = load_config(
+            Path(args.defaults_config) if args.defaults_config else None,
+            Path(args.repositories_config) if args.repositories_config else None,
+        )
         explicit_client_projects: set[str] | None = None
         if args.projects:
             projects = sorted({project.strip() for project in args.projects.split(",") if project.strip()})
         else:
+            if not args.base_ref:
+                raise ValueError("扫描本地改动必须显式提供 --base-ref")
             projects = detect_changed_projects(Path(args.projects_root), args.base_ref)
         if args.client_projects is not None:
             explicit_client_projects = {project.strip() for project in args.client_projects.split(",") if project.strip()}
         plan = build_plan(projects, config, args.skip_server, explicit_client_projects)
         execution_result: dict[str, Any] | None = None
+        execution = config.get("execution", {})
+        poll_interval = args.poll_interval if args.poll_interval is not None else int(execution["pollIntervalSeconds"])
+        client_initial_wait = args.client_initial_wait if args.client_initial_wait is not None else int(execution["clientInitialWaitSeconds"])
+        client_timeout = args.client_timeout if args.client_timeout is not None else int(execution["clientTimeoutSeconds"])
+        server_timeout = args.server_timeout if args.server_timeout is not None else int(execution["serverTimeoutSeconds"])
         if args.run:
-            execution_result = execute_plan(plan, args.poll_interval, args.client_initial_wait, args.client_timeout, args.server_timeout, args.verbose)
+            execution_result = execute_plan(plan, poll_interval, client_initial_wait, client_timeout, server_timeout, args.verbose)
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

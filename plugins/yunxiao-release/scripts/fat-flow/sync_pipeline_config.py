@@ -11,25 +11,17 @@ from typing import Any
 
 from yunxiao_env import require_yunxiao_runtime
 from yunxiao_env import run_devops
+from fat_flow_config import default_paths
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_CONFIG = SCRIPT_DIR / "fat-pipeline-config.json"
 DEFAULT_OUTPUT = SCRIPT_DIR / "output" / "pipeline-sync-result.json"
-CLIENT_NAMES = (
-    "【FAT】java服务Client打包-1",
-    "【FAT】java服务Client打包-2",
-    "【FAT】java服务Client打包-3",
-    "【FAT】java服务Client打包-4",
-)
-FRAMEWORK_NAME = "【FAT】框架基础包打包"
-FRONTEND_GROUP_ID = "142296"
 
 
 def parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
     parser = argparse.ArgumentParser(description="从云效 Flow API 同步 FAT 流水线映射配置。")
-    parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="要更新的配置文件。")
+    parser.add_argument("--config", default=str(default_paths()[0]), help="要更新的全局默认配置文件。")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="同步结果输出文件。")
     parser.add_argument("--max-pages", type=int, default=20, help="查询流水线列表的最大页数。")
     parser.add_argument(
@@ -113,11 +105,12 @@ def extract_project_options(pipeline_detail: dict[str, Any]) -> list[str]:
     return []
 
 
-def update_client_pipelines(config: dict[str, Any], sync_result: dict[str, Any], max_pages: int) -> None:
+def update_client_pipelines(config: dict[str, Any], discovery: dict[str, Any], sync_result: dict[str, Any], max_pages: int) -> None:
     """同步 client 打包流水线配置。"""
     client_config = config.setdefault("clientPackage", {})
-    framework_candidates = list_pipelines_by_name("框架基础包打包", max_pages)
-    framework = find_exact_pipeline(framework_candidates, FRAMEWORK_NAME)
+    framework_name = str(discovery["frameworkPipelineName"])
+    framework_candidates = list_pipelines_by_name(str(discovery["frameworkSearchName"]), max_pages)
+    framework = find_exact_pipeline(framework_candidates, framework_name)
     if framework:
         detail = get_pipeline(str(framework["pipelineId"]))
         framework_config = client_config.setdefault("frameworkPipeline", {})
@@ -126,10 +119,10 @@ def update_client_pipelines(config: dict[str, Any], sync_result: dict[str, Any],
         framework_config["projects"] = extract_project_options(detail)
         sync_result["frameworkPipeline"] = framework_config
 
-    client_candidates = list_pipelines_by_name("java服务Client打包", max_pages)
+    client_candidates = list_pipelines_by_name(str(discovery["clientSearchName"]), max_pages)
     pipelines_by_name = {pipeline.get("pipelineName"): pipeline for pipeline in client_candidates}
     java_service_pipelines: list[dict[str, Any]] = []
-    for name in CLIENT_NAMES:
+    for name in discovery["clientPipelineNames"]:
         pipeline = pipelines_by_name.get(name)
         if not pipeline:
             sync_result.setdefault("missingClientPipelines", []).append(name)
@@ -151,23 +144,23 @@ def update_client_pipelines(config: dict[str, Any], sync_result: dict[str, Any],
         sync_result["javaServicePipelines"] = java_service_pipelines
 
 
-def normalize_server_project(pipeline_name: str) -> str | None:
+def normalize_server_project(pipeline_name: str, pattern: str) -> str | None:
     """从 FAT server 流水线名称推断项目名。"""
-    matched = re.match(r"^【FAT】(monkey-.+?)(?:-jdk17)?-vpc$", pipeline_name)
+    matched = re.match(pattern, pipeline_name)
     if not matched:
         return None
     return matched.group(1)
 
 
-def update_server_pipelines(config: dict[str, Any], sync_result: dict[str, Any], max_pages: int) -> None:
+def update_server_pipelines(config: dict[str, Any], discovery: dict[str, Any], sync_result: dict[str, Any], max_pages: int) -> None:
     """同步 FAT server 部署流水线配置。"""
     server_config = config.setdefault("serverDeploy", {})
     projects = server_config.setdefault("projects", {})
-    pipelines = list_pipelines_by_name("【FAT】monkey-", max_pages)
+    pipelines = list_pipelines_by_name(str(discovery["serverSearchName"]), max_pages)
     matched: dict[str, dict[str, str]] = {}
     for pipeline in pipelines:
         pipeline_name = str(pipeline.get("pipelineName") or "")
-        project = normalize_server_project(pipeline_name)
+        project = normalize_server_project(pipeline_name, str(discovery["serverNamePattern"]))
         if not project:
             continue
         current = matched.get(project)
@@ -190,38 +183,33 @@ def update_server_pipelines(config: dict[str, Any], sync_result: dict[str, Any],
     sync_result["serverProjects"] = projects
 
 
-def select_frontend_pipeline(project: str, max_pages: int) -> tuple[dict[str, Any], dict[str, Any]] | None:
+def select_frontend_pipeline(project: str, discovery: dict[str, Any], max_pages: int) -> tuple[dict[str, Any], dict[str, Any]] | None:
     """查找前端-FAT 分组中项目对应的 nodejs 流水线，优先选择非 mise 版本。"""
-    candidates = list_pipelines_by_name(f"【FAT】{project}-nodejs", max_pages)
-    exact_names = [
-        f"【FAT】{project}-nodejs",
-        f"【FAT】{project}-nodejs_mise",
-    ]
+    exact_names = [str(template).format(project=project) for template in discovery["frontendNameTemplates"]]
+    candidates = list_pipelines_by_name(exact_names[0], max_pages)
     for expected_name in exact_names:
         matched = [item for item in candidates if item.get("pipelineName") == expected_name]
         for pipeline in sorted(matched, key=lambda item: int(item.get("createTime") or 0), reverse=True):
             detail = get_pipeline(str(pipeline["pipelineId"]))
-            if str(detail.get("groupId") or "") == FRONTEND_GROUP_ID:
+            if str(detail.get("groupId") or "") == str(discovery["frontendGroupId"]):
                 return pipeline, detail
     return None
 
 
 def update_frontend_pipelines(
     config: dict[str, Any],
+    discovery: dict[str, Any],
     sync_result: dict[str, Any],
     max_pages: int,
     explicit_projects: list[str],
 ) -> None:
     """同步前端-FAT 分组中的项目部署流水线配置。"""
     frontend_config = config.setdefault("frontendDeploy", {})
-    frontend_config.setdefault("groupId", FRONTEND_GROUP_ID)
-    frontend_config.setdefault("defaultBranch", "develop")
-    frontend_config.setdefault("defaultEnv", "fat")
-    frontend_config.setdefault("defaultEnvName", "default")
+    frontend_config.setdefault("groupId", str(discovery["frontendGroupId"]))
     projects_config = frontend_config.setdefault("projects", {})
     projects = explicit_projects or sorted(str(project) for project in projects_config)
     for project in projects:
-        selected = select_frontend_pipeline(project, max_pages)
+        selected = select_frontend_pipeline(project, discovery, max_pages)
         if selected is None:
             sync_result.setdefault("missingFrontendPipelines", []).append(project)
             continue
@@ -247,12 +235,19 @@ def main() -> None:
     args = parse_args()
     require_yunxiao_runtime()
     config_path = Path(args.config)
-    config = load_config(config_path)
+    document = load_config(config_path)
+    config = document.get("fatFlow")
+    if not isinstance(config, dict):
+        raise ValueError("全局默认配置缺少 fatFlow")
+    discovery = config.get("pipelineDiscovery")
+    if not isinstance(discovery, dict):
+        raise ValueError("fatFlow 缺少 pipelineDiscovery")
     sync_result: dict[str, Any] = {}
-    update_client_pipelines(config, sync_result, args.max_pages)
-    update_frontend_pipelines(config, sync_result, args.max_pages, args.frontend_project)
-    update_server_pipelines(config, sync_result, args.max_pages)
-    write_json(config_path, config)
+    update_client_pipelines(config, discovery, sync_result, args.max_pages)
+    update_frontend_pipelines(config, discovery, sync_result, args.max_pages, args.frontend_project)
+    update_server_pipelines(config, discovery, sync_result, args.max_pages)
+    document["fatFlow"] = config
+    write_json(config_path, document)
     write_json(Path(args.output), sync_result)
     print(f"已同步配置：{config_path}")
     print(f"同步结果：{args.output}")

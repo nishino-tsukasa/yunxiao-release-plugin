@@ -21,13 +21,13 @@ const run = () => {
   const config = buildConfig();
   assert.equal(config.organizationId, '');
   assert.equal(config.repositoryId, '');
-  assert.equal(config.targetBranch, 'master');
-  assert.equal(config.remoteName, 'origin');
+  assert.equal(config.targetBranch, undefined);
+  assert.equal(config.remoteName, undefined);
   assert.equal(Object.hasOwn(config, 'reviewMode'), false);
   assert.equal(config.reviewerMode, 'ask');
   assert.deepEqual(config.reviewerUserIds, []);
-  assert.deepEqual(config.testDeployments, []);
-  assert.equal(config.versionFile, 'package.json');
+  assert.equal(config.testDeployments, undefined);
+  assert.equal(config.versionFile, undefined);
   assert.equal(buildConfig({ versionFile: null }).versionFile, null);
   assert.equal(Object.hasOwn(buildConfig({ reviewMode: 'skip' }), 'reviewMode'), false);
   assert.equal(buildConfig({ targetBranch: 'main', versionFile: 'VERSION' }).targetBranch, 'main');
@@ -36,7 +36,7 @@ const run = () => {
   writeFileSync(resolve(rootDir, '.gitignore'), '.codex/\n');
   assert.throws(() => writeProjectConfig(rootDir, { ...config, runtimeFile: '../outside.json' }), /项目内相对路径/);
   configureProject(rootDir);
-  assert.equal(JSON.parse(readFileSync(resolve(rootDir, '.agents/yunxiao-release.json'))).targetBranch, 'master');
+  assert.equal(JSON.parse(readFileSync(resolve(rootDir, '.agents/yunxiao-release.json'))).targetBranch, undefined);
   assert.equal(spawnSync('git', ['check-ignore', '.agents/yunxiao-release.json'], { cwd: rootDir }).status, 1);
   assert.equal(
     readFileSync(resolve(rootDir, '.gitignore'), 'utf8'),

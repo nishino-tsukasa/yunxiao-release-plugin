@@ -14,7 +14,7 @@ const root = mkdtempSync(resolve(tmpdir(), 'yunxiao-global-config-'));
 const configHome = resolve(root, 'config');
 const env = { HOME: root, XDG_CONFIG_HOME: configHome };
 execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
-execFileSync('git', ['remote', 'add', 'origin', 'git@codeup.aliyun.com:supermonkey/monkey-core.git'], { cwd: root });
+execFileSync('git', ['remote', 'add', 'origin', 'git@codeup.aliyun.com:example/service.git'], { cwd: root });
 mkdirSync(resolve(configHome, 'yunxiao-release'), { recursive: true });
 const emptyRoot = mkdtempSync(resolve(tmpdir(), 'yunxiao-global-empty-'));
 const emptyEnv = { HOME: emptyRoot, XDG_CONFIG_HOME: resolve(emptyRoot, 'config') };
@@ -26,12 +26,9 @@ assert.deepEqual(applyGlobalConfig({
 assert.equal(JSON.parse(readFileSync(resolveGlobalDefaultsPath(emptyEnv))).organizationId, 'org-2');
 assert.equal(JSON.parse(readFileSync(resolveGlobalRepositoriesPath(emptyEnv))).repositories['codeup.aliyun.com/group/repo'].repositoryId, '2');
 assert.throws(() => applyGlobalConfig({ defaults: { repositoryId: 'bad' } }, emptyEnv), /不能包含 repositoryId/);
-assert.throws(() => applyGlobalConfig({ repositories: {
-  'codeup.aliyun.com/group/backend': { projectType: 'backend', targetBranch: 'fat/fat' },
-} }, emptyEnv), /targetBranch 必须是 release/);
-assert.throws(() => applyGlobalConfig({ repositories: {
-  'codeup.aliyun.com/group/saas': { projectType: 'frontend', projectGroup: 'saas', targetBranch: 'master' },
-} }, emptyEnv), /targetBranch 必须是 release/);
+assert.doesNotThrow(() => applyGlobalConfig({ repositories: {
+  'codeup.aliyun.com/group/service': { projectType: 'custom', targetBranch: 'custom-target' },
+} }, emptyEnv));
 const inheritedRoot = mkdtempSync(resolve(tmpdir(), 'yunxiao-global-inherited-'));
 const inheritedEnv = { HOME: inheritedRoot, XDG_CONFIG_HOME: resolve(inheritedRoot, 'config') };
 assert.doesNotThrow(() => applyGlobalConfig({
@@ -54,8 +51,9 @@ writeFileSync(resolveGlobalDefaultsPath(env), `${JSON.stringify({
 })}\n`);
 writeFileSync(resolveGlobalRepositoriesPath(env), `${JSON.stringify({
   schemaVersion: 1, repositories: {
-    'codeup.aliyun.com/supermonkey/monkey-core': {
+    'codeup.aliyun.com/example/service': {
       projectType: 'backend',
+      projectConfigMigration: 'retain',
       repositoryId: 'repo-1',
       remoteName: 'origin',
       targetBranch: 'release',
@@ -72,8 +70,8 @@ writeFileSync(resolveGlobalRepositoriesPath(env), `${JSON.stringify({
   },
 })}\n`);
 
-assert.equal(normalizeRemoteUrl('https://codeup.aliyun.com/supermonkey/monkey-core.git'), 'codeup.aliyun.com/supermonkey/monkey-core');
-assert.equal(readGlobalProjectConfig(root, env).repositoryKey, 'codeup.aliyun.com/supermonkey/monkey-core');
+assert.equal(normalizeRemoteUrl('https://codeup.aliyun.com/example/service.git'), 'codeup.aliyun.com/example/service');
+assert.equal(readGlobalProjectConfig(root, env).repositoryKey, 'codeup.aliyun.com/example/service');
 assert.equal(readProjectConfig(root, env).repositoryId, 'repo-1');
 assert.equal(readProjectConfig(root, env).targetBranch, 'release');
 assert.equal(readProjectConfig(root, env).versionFile, null);
@@ -83,11 +81,14 @@ writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":
 assert.equal(readProjectConfig(root, env).targetBranch, 'release');
 assert.equal(readProjectConfig(root, env).repositoryId, 'repo-1');
 writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"master"}\n');
-assert.throws(() => readProjectConfig(root, env), /targetBranch 必须是 release/);
+assert.equal(readProjectConfig(root, env).targetBranch, 'master');
 writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"release"}\n');
-assert.equal(finalizeProjectMigration({ rootDir: root, projectType: 'frontend' }, env), 'retained');
+assert.equal(finalizeProjectMigration({ rootDir: root }, env), 'retained');
 assert.equal(existsSync(resolve(root, '.agents/yunxiao-release.json')), true);
-assert.equal(finalizeProjectMigration({ rootDir: root, projectType: 'backend' }, env), 'deleted');
+const repositoryDocument = JSON.parse(readFileSync(resolveGlobalRepositoriesPath(env)));
+repositoryDocument.repositories['codeup.aliyun.com/example/service'].projectConfigMigration = 'delete';
+writeFileSync(resolveGlobalRepositoriesPath(env), `${JSON.stringify(repositoryDocument)}\n`);
+assert.equal(finalizeProjectMigration({ rootDir: root }, env), 'deleted');
 assert.equal(existsSync(resolve(root, '.agents/yunxiao-release.json')), false);
 
 writeFileSync(resolveGlobalDefaultsPath(env), '{"schemaVersion":1,"repositoryId":"bad"}\n');

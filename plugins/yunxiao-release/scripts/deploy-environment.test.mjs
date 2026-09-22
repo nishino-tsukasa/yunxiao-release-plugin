@@ -56,6 +56,14 @@ const run = async () => {
       repositoryId: 'repo-1',
       remoteName: 'origin',
       targetBranch: 'release',
+      reviewerMode: 'ask',
+      reviewerUserIds: [],
+      versionFile: null,
+      announcementFile: null,
+      localConfigFile: '.agents/yunxiao-release.local.json',
+      runtimeFile: '.agents/runtime/yunxiao-release-mr.json',
+      commentsFile: '.agents/runtime/yunxiao-release-comments.md',
+      validationCommands: ['git diff --check'],
       testDeployments: [
         {
           environment: 'fat',

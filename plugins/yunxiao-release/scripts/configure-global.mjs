@@ -47,13 +47,6 @@ export const applyGlobalConfig = (payload, env = process.env) => {
     : Object.fromEntries(keys.map((key) => [key, { ...(current.repositories[key] ?? {}), ...(incomingRepositories[key] ?? {}) }]));
   Object.entries(repositories).forEach(([key, value]) => {
     if (!key || !isObject(value)) throw new Error(`仓库配置无效: ${key || '<empty>'}`);
-    const effective = { ...defaults, ...value };
-    const releaseFrontendGroups = new Set(['saas', 'cms', 'starlink', 'enterprise']);
-    const requiresRelease = value.projectType === 'backend'
-      || (value.projectType === 'frontend' && releaseFrontendGroups.has(value.projectGroup));
-    if (requiresRelease && effective.targetBranch !== 'release') {
-      throw new Error(`仓库 ${key} 的 MR targetBranch 必须是 release`);
-    }
   });
   writeJsonAtomic(resolveGlobalDefaultsPath(env), { schemaVersion: 1, ...defaults });
   writeJsonAtomic(resolveGlobalRepositoriesPath(env), { schemaVersion: 1, repositories });
@@ -66,8 +59,6 @@ export const applyGlobalConfig = (payload, env = process.env) => {
 export const finalizeProjectMigration = (migration, env = process.env) => {
   if (!isObject(migration)) throw new Error('projectMigration 必须是对象');
   const rootDir = realpathSync(resolve(String(migration.rootDir || '')));
-  const projectType = migration.projectType;
-  if (!['frontend', 'backend'].includes(projectType)) throw new Error('projectType 必须是 frontend 或 backend');
   const projectConfigPath = resolve(rootDir, '.agents/yunxiao-release.json');
   if (!existsSync(projectConfigPath)) return 'absent';
   const raw = JSON.parse(readFileSync(projectConfigPath, 'utf8'));
@@ -89,7 +80,12 @@ export const finalizeProjectMigration = (migration, env = process.env) => {
     renameSync(temporaryPath, projectConfigPath);
     throw new Error(`集中配置未完整覆盖项目字段: ${mismatches.join(', ')}`);
   }
-  if (projectType === 'frontend') {
+  const migrationAction = effective.projectConfigMigration;
+  if (!['retain', 'delete'].includes(migrationAction)) {
+    renameSync(temporaryPath, projectConfigPath);
+    throw new Error('集中配置必须显式设置 projectConfigMigration=retain|delete');
+  }
+  if (migrationAction === 'retain') {
     renameSync(temporaryPath, projectConfigPath);
     return 'retained';
   }

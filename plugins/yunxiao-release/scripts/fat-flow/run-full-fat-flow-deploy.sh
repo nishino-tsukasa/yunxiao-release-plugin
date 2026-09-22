@@ -13,7 +13,7 @@ SCRIPT_VERBOSE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_FAT_FLOW_SCRIPT="${SCRIPT_DIR}/run-fat-flow.sh"
 PLAN_DEPLOY_SCRIPT="${SCRIPT_DIR}/plan-changed-fat-flow.sh"
-source "${SCRIPT_DIR}/project-kind.sh"
+CONFIG_HELPER="${SCRIPT_DIR}/fat_flow_config.py"
 
 # 展示脚本用法，避免固定流程入口传参不完整时难以排查。
 usage() {
@@ -138,6 +138,9 @@ ensure_scripts_exist() {
   if [[ ! -x "$PLAN_DEPLOY_SCRIPT" ]]; then
     fail "plan-changed-fat-flow.sh 不存在或不可执行"
   fi
+  if [[ ! -f "$CONFIG_HELPER" ]]; then
+    fail "fat_flow_config.py 不存在"
+  fi
 }
 
 # 校验 repo 参数并提前收敛出部署项目名，减少后续重复推断。
@@ -189,66 +192,10 @@ normalize_projects() {
   SCRIPT_MANUAL_CLIENT_PROJECTS=("${unique_client_projects[@]-}")
 }
 
-# 判断仓库是否采用 monkey-*-client / monkey-*-server 的标准多模块结构。
-repo_has_standard_client_server_layout() {
-  local repo="$1"
-  local entry
-  for entry in "$repo"/monkey-*-client "$repo"/monkey-*-server; do
-    if [[ -d "$entry" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-# 依据项目名选择 FAT 发版目标分支；名称包含 -web 的前端项目合并到 develop，其他项目合并到 fat/fat。
-resolve_target_branch_for_repo() {
-  local repo="$1"
-  if is_frontend_repo "$repo"; then
-    printf 'develop\n'
-  else
-    printf 'fat/fat\n'
-  fi
-}
-
-# 解析用于比较本次改动的基准分支，优先使用对应项目的远端发版分支。
-resolve_diff_base_ref() {
-  local repo="$1"
-  local target_branch
-  target_branch="$(resolve_target_branch_for_repo "$repo")"
-  if git -C "$repo" rev-parse --verify --quiet "origin/${target_branch}" >/dev/null 2>&1; then
-    printf 'origin/%s\n' "$target_branch"
-    return 0
-  fi
-  if git -C "$repo" rev-parse --verify --quiet "$target_branch" >/dev/null 2>&1; then
-    printf '%s\n' "$target_branch"
-    return 0
-  fi
-  return 1
-}
-
-# 判断单个仓库本次是否真的改到了 client 模块。
+# 按仓库显式配置判断本次是否需要打 Client 包。
 repo_needs_client_package() {
   local repo="$1"
-  local diff_base_ref
-  local changed_files
-  if is_frontend_repo "$repo"; then
-    return 1
-  fi
-  if ! repo_has_standard_client_server_layout "$repo"; then
-    return 0
-  fi
-  if ! diff_base_ref="$(resolve_diff_base_ref "$repo")"; then
-    fail "无法确定 client 改动对比基准: $repo"
-  fi
-  if ! git -C "$repo" rev-parse --verify --quiet "$SCRIPT_BRANCH" >/dev/null 2>&1; then
-    fail "源分支不存在，无法判断 client 改动: repo=$repo branch=$SCRIPT_BRANCH"
-  fi
-  changed_files="$(git -C "$repo" diff --name-only "${diff_base_ref}...${SCRIPT_BRANCH}")"
-  if printf '%s\n' "$changed_files" | grep -Eq '^monkey-.*-client/'; then
-    return 0
-  fi
-  return 1
+  python3 "$CONFIG_HELPER" needs-client --repo "$repo" --branch "$SCRIPT_BRANCH"
 }
 
 # 在执行 fat flow 前预先确定哪些项目需要打 client，避免部署阶段再做推理。
@@ -264,7 +211,14 @@ collect_client_projects() {
       SCRIPT_CLIENT_PROJECTS=("${SCRIPT_MANUAL_CLIENT_PROJECTS[@]}")
       return
     fi
-    SCRIPT_CLIENT_PROJECTS=("${SCRIPT_PROJECTS[@]}")
+    local project
+    local mode
+    for project in "${SCRIPT_PROJECTS[@]}"; do
+      mode="$(python3 "$CONFIG_HELPER" get --project "$project" --field clientDetection.mode)" || fail "读取 Client 配置失败: $project"
+      if [[ "$mode" != "never" ]]; then
+        SCRIPT_CLIENT_PROJECTS+=("$project")
+      fi
+    done
     return
   fi
   for repo in "${SCRIPT_REPOS[@]}"; do

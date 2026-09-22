@@ -38,19 +38,19 @@
 |---|---|---|
 | `organizationId` | 无，必填；配置流程无法获取或未确认时停止 | `get_current_organization_info` 返回的当前组织，或用户从云效管理后台基本信息提供；必须确认 |
 | `repositoryId` | 无，必填；配置流程无法唯一确认时停止 | 从 Git remote 提取仓库名，用 `list_repositories` 搜索候选；用户确认后以 `get_repository` 返回的数字 `id` 核对，并将 `String(id)` 作为十进制字符串写入 |
-| `remoteName` | `origin` | 当前项目 `git remote -v` 中指向目标云效仓库的 remote |
-| `targetBranch` | `master` | 项目分支策略和项目维护者决定；使用 `get_branch` 验证存在，不从仓库响应推断默认分支 |
+| `remoteName` | 无，配置必填 | 当前项目 `git remote -v` 中指向目标云效仓库的 remote |
+| `targetBranch` | 无，配置必填 | 项目分支策略和项目维护者决定；使用 `get_branch` 验证存在，不从仓库响应推断默认分支 |
 | `reviewerMode` | `ask` | MR 评审人选择策略，只允许 `ask|fixed` |
 | `reviewerUserIds` | `[]` | `search_organization_members` 返回并由用户确认的 `userId` 白名单；代码库权限另行确认 |
-| `versionFile` | `package.json` | 项目现有版本来源；显式设为 `null` 时跳过版本修改 |
+| `versionFile` | 无，配置必填，可为 `null` | 项目现有版本来源；显式设为 `null` 时跳过版本修改 |
 | `announcementFile` | `null` | 项目现有发版公告；`null` 跳过公告修改 |
 | `localConfigFile` | `.agents/yunxiao-release.local.json` | 可覆盖用户级配置的项目成员配置路径，必须被 Git 忽略 |
 | `runtimeFile` | `.agents/runtime/yunxiao-release-mr.json` | 项目内共享 MR 状态路径，必须被 Git 忽略 |
 | `commentsFile` | `.agents/runtime/yunxiao-release-comments.md` | 项目内共享评论记录路径，必须被 Git 忽略 |
-| `validationCommands` | `["git diff --check"]` | 项目规则和 CI 的最低验证命令，必须是非空数组；执行前完整展示并纳入对应流程的一次总确认 |
+| `validationCommands` | 无，配置必填 | 项目规则和 CI 的最低验证命令，必须是非空数组；执行前完整展示并纳入对应流程的一次总确认 |
 | `testDeployments` | `[]` | 项目环境发布配置；自动测试发布或生产环境人工发布入口 |
 
-后端项目，以及 `projectGroup` 为 `saas`、`cms`、`starlink` 或 `enterprise` 的前端项目必须使用 `targetBranch=release`。测试环境分支只能写入 `testDeployments[].targetBranch`。
+仓库配置还必须显式提供 `projectType`、`projectConfigMigration`、`fatTargetBranch`、`commitMessagePattern` 和 `clientDetection`。这些字段只描述该仓库，不由插件根据名称或类型推断。组织级流水线目录、发现规则和执行参数统一放在全局默认配置的 `fatFlow`。
 
 ## 环境发布
 
@@ -60,7 +60,7 @@
 [
   {
     "environment": "fat",
-    "targetBranch": "develop",
+    "targetBranch": "testing",
     "hookUrl": "https://example.com/webhook",
     "webUrl": "https://example.com/pipeline"
   },
@@ -71,14 +71,14 @@
 ]
 ```
 
-- 自动发布：`targetBranch` 和 `hookUrl` 必须同时配置，`webUrl` 可选。远端 release 分支复用共享配置的 `targetBranch`。
+- 自动发布：`targetBranch` 和 `hookUrl` 必须同时配置，`webUrl` 可选。待发布的远端源分支使用共享配置的 `targetBranch`。
 - 手动发布：省略 `targetBranch` 和 `hookUrl`，必须配置 `webUrl`；只返回人工发布入口，不执行 Git 或 webhook。
 - 所有 URL 只允许 HTTP(S)。每次只发布一个环境，不根据 `fat`、`uat`、`production` 等名称猜测模式。
 - 自动发布的 webhook 请求固定为 `POST application/json`。`feishuId` 已配置时请求体是 `{ "feishuId": "...", "branch": "<targetBranch>" }`，未配置时仅发送 `{ "branch": "<targetBranch>" }`，不阻断发布。
 
 `feishuId` 是可选成员字段，与 `displayName`、`userId` 存放在同一个用户级或项目级成员 JSON 中。项目 `localConfigFile` 中存在该值时优先，否则读取用户级 `member.json`；未配置不报错。身份配置更新必须保留已有 `feishuId`，日志和最终输出不得显示该值。
 
-用户明确要求发布具体自动测试环境时，先以 `--dry-run` 预检并展示全部副作用，预检通过后直接执行，不再要求确认；未明确环境且无法唯一匹配时只询问一次环境选择。执行时要求干净工作区，把远端 release 普通合入当前分支，再从远端测试分支创建临时 detached worktree，普通合入当前 HEAD，非强制推送并验证远端提交后触发 webhook。成功或失败均强制清理 worktree；清理失败必须报告残留路径。Webhook 失败不回滚已经推送的测试分支。
+用户明确要求发布具体自动测试环境时，先以 `--dry-run` 预检并展示全部副作用，预检通过后直接执行，不再要求确认；未明确环境且无法唯一匹配时只询问一次环境选择。执行时要求干净工作区，把配置的远端源分支普通合入当前分支，再从远端测试分支创建临时 detached worktree，普通合入当前 HEAD，非强制推送并验证远端提交后触发 webhook。成功或失败均强制清理 worktree；清理失败必须报告残留路径。Webhook 失败不回滚已经推送的测试分支。
 
 用户要求“发版”“上线”“发布线上”等操作且意图是正式环境时，必须先按当前 Git、MR 和远端状态完成或重新核验合并前准备，再返回生产环境人工入口；合并前准备未完成时停止。`testDeployments` 缺失或为空数组时，只完成合并前准备并说明未配置生产发布入口，不执行环境发布脚本，也不要求补充配置。不得仅凭上述词语猜测用户要发布正式环境还是测试环境。
 

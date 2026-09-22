@@ -18,9 +18,14 @@ const run = () => {
   const agentsDir = resolve(rootDir, '.agents');
   mkdirSync(codexDir, { recursive: true });
   mkdirSync(agentsDir, { recursive: true });
+  const baseConfig = {
+    organizationId: 'org-1', repositoryId: 'repo-1', remoteName: 'upstream', targetBranch: 'stable',
+    reviewerMode: 'ask', reviewerUserIds: [], versionFile: null, announcementFile: null,
+    localConfigFile: '.agents/yunxiao-release.local.json', runtimeFile: '.agents/runtime/yunxiao-release-mr.json',
+    commentsFile: '.agents/runtime/yunxiao-release-comments.md', validationCommands: ['git diff --check'], testDeployments: [],
+  };
   writeJson(resolve(agentsDir, 'yunxiao-release.json'), {
-    organizationId: 'org-1',
-    repositoryId: 'repo-1',
+    ...baseConfig,
   });
   writeJson(resolve(agentsDir, 'yunxiao-release.local.json'), {
     displayName: '@测试成员',
@@ -33,12 +38,12 @@ const run = () => {
     createdAt: '2026-07-16T01:00:00.000Z',
     createdBy: 'user-1',
     sourceBranch: 'feature/example',
-    targetBranch: 'master',
+    targetBranch: 'stable',
     reviewMode: 'skip',
     lastSyncedAt: '2026-07-16T01:01:00.000Z',
   };
-  assert.equal(checkConfig(rootDir).config.targetBranch, 'master');
-  assert.equal(checkConfig(rootDir).config.versionFile, 'package.json');
+  assert.equal(checkConfig(rootDir).config.targetBranch, 'stable');
+  assert.equal(checkConfig(rootDir).config.versionFile, null);
   assert.deepEqual(checkConfig(rootDir).config.testDeployments, []);
   assert.equal(checkConfig(rootDir).localConfig.userId, 'user-1');
   assert.equal(checkConfig(rootDir).memberConfigSource, 'project');
@@ -74,8 +79,7 @@ const run = () => {
   assert.equal(checkConfig(rootDir, { CODEX_HOME: codexHome, XDG_CONFIG_HOME: xdgConfigHome }).memberConfigSource, 'project');
   assert.equal(checkConfig(rootDir, { CODEX_HOME: codexHome, XDG_CONFIG_HOME: xdgConfigHome }).localConfig.userId, 'user-1');
   writeJson(resolve(agentsDir, 'yunxiao-release.json'), {
-    organizationId: 'org-1',
-    repositoryId: 'repo-1',
+    ...baseConfig,
     testDeployments: [
       { environment: 'fat', targetBranch: 'develop', hookUrl: 'https://example.com/hook' },
       { environment: 'production', webUrl: 'https://example.com/pipeline' },
@@ -84,14 +88,12 @@ const run = () => {
   assert.equal(readProjectConfig(rootDir).testDeployments[0].targetBranch, 'develop');
   assert.equal(readProjectConfig(rootDir).testDeployments[1].webUrl, 'https://example.com/pipeline');
   writeJson(resolve(agentsDir, 'yunxiao-release.json'), {
-    organizationId: 'org-1',
-    repositoryId: 'repo-1',
+    ...baseConfig,
     testDeployments: [{ environment: 'broken', targetBranch: 'develop' }],
   });
   assert.throws(() => readProjectConfig(rootDir), /targetBranch 和 hookUrl 必须同时配置/);
   writeJson(resolve(agentsDir, 'yunxiao-release.json'), {
-    organizationId: 'org-1',
-    repositoryId: 'repo-1',
+    ...baseConfig,
     reviewMode: 'ask',
   });
   assert.equal(Object.hasOwn(readProjectConfig(rootDir), 'reviewMode'), false);
@@ -107,8 +109,7 @@ const run = () => {
   });
   assert.equal(getCurrentMr(rootDir, 'feature/example').mrId, '11');
   writeJson(resolve(agentsDir, 'yunxiao-release.json'), {
-    organizationId: 'org-1',
-    repositoryId: 'repo-1',
+    ...baseConfig,
     runtimeFile: '../outside.json',
   });
   assert.throws(() => getCurrentMr(rootDir, 'feature/example'), /项目内相对路径|项目目录内/);

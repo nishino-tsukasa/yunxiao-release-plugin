@@ -5,16 +5,14 @@ set -euo pipefail
 TARGET_MESSAGE=""
 TARGET_COMMIT=""
 TARGET_REPO=""
-TARGET_KIND=""
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/project-kind.sh"
+TARGET_PATTERN=""
 
 # 统一展示脚本用法，避免调用参数错误时难以排查。
 usage() {
   cat <<'EOF'
 Usage:
   validate-commit-message.sh --message "<commit-message>"
-  validate-commit-message.sh --repo <repo-path> --commit <commit-id> [--kind backend|frontend]
+  validate-commit-message.sh --repo <repo-path> --commit <commit-id> --pattern <regex>
 EOF
 }
 
@@ -44,8 +42,8 @@ parse_args() {
         TARGET_REPO="$2"
         shift 2
         ;;
-      --kind)
-        TARGET_KIND="$2"
+      --pattern)
+        TARGET_PATTERN="$2"
         shift 2
         ;;
       -h|--help)
@@ -70,30 +68,9 @@ parse_args() {
     exit 1
   fi
 
-  if [[ -n "$TARGET_KIND" && "$TARGET_KIND" != "backend" && "$TARGET_KIND" != "frontend" ]]; then
-    log_error "--kind 只能是 backend 或 frontend"
-    exit 1
-  fi
-
   if [[ -n "$TARGET_COMMIT" && -z "$TARGET_REPO" ]]; then
     log_error "使用 --commit 时必须同时传入 --repo"
     exit 1
-  fi
-}
-
-# 根据项目名选择提交规范；约定名称包含 -web 的项目使用前端规范，其余项目使用后端规范。
-resolve_target_kind() {
-  if [[ -n "$TARGET_KIND" ]]; then
-    return
-  fi
-  if [[ -z "$TARGET_REPO" ]]; then
-    TARGET_KIND="backend"
-    return
-  fi
-  if is_frontend_repo "$TARGET_REPO"; then
-    TARGET_KIND="frontend"
-  else
-    TARGET_KIND="backend"
   fi
 }
 
@@ -120,7 +97,7 @@ validate_message() {
   local validation_output
   validation_output="$(
     # Perl 不能依赖调用机器是否安装 C.UTF-8；显式解码提交信息，保证中文 scope 仍按 UTF-8 校验。
-    LC_ALL=C LANG=C COMMIT_MESSAGE="$TARGET_MESSAGE" COMMIT_KIND="$TARGET_KIND" perl -e '
+    LC_ALL=C LANG=C COMMIT_MESSAGE="$TARGET_MESSAGE" COMMIT_PATTERN="$TARGET_PATTERN" perl -e '
       use strict;
       use warnings;
       use utf8;
@@ -135,10 +112,16 @@ validate_message() {
         print "INVALID reason=invalid_utf8_message\n";
         exit 1;
       };
-      my $kind = $ENV{COMMIT_KIND} // q(backend);
-      my $regex = $kind eq q(frontend)
-        ? qr/^(Merge .+|Revert .+|(feat|fix|docs|style|refactor|test|chore|pkg)\([^()\r\n]+\):\s+\S.*)(\n[\s\S]*)?$/s
-        : qr/^(Merge .+|Revert .+|(feat|fix|refactor|perf|test|style|docs|chore)\([A-Za-z0-9\-_一-龥]{1,50}\): .{10,})(\n[\s\S]*)?$/s;
+      my $pattern = decode(q(UTF-8), $ENV{COMMIT_PATTERN} // q{}, FB_CROAK);
+      if ($pattern eq q{}) {
+        print "INVALID reason=missing_pattern\n";
+        exit 1;
+      }
+      my $regex = eval { qr/$pattern/s };
+      if (!$regex) {
+        print "INVALID reason=invalid_pattern\n";
+        exit 1;
+      }
 
       if ($message !~ /\S/) {
         print "INVALID reason=empty_message\n";
@@ -151,14 +134,6 @@ validate_message() {
       }
 
       my ($subject) = split /\n/, $message, 2;
-      my $subject_regex = $kind eq q(frontend)
-        ? qr/^(Merge .+|Revert .+|(feat|fix|docs|style|refactor|test|chore|pkg)\([^()\r\n]+\):\s+\S.*)$/
-        : qr/^(Merge .+|Revert .+|(feat|fix|refactor|perf|test|style|docs|chore)\(([A-Za-z0-9\-_一-龥]{1,50})\): (.{10,}))$/;
-      if ($subject !~ $subject_regex) {
-        print "INVALID reason=subject_parse_failed\n";
-        exit 1;
-      }
-
       print "VALID subject=$subject\n";
     ' 2>&1
   )" || {
@@ -172,8 +147,6 @@ validate_message() {
 # 主流程只负责参数解析、可选读取 commit message、执行正则校验。
 main() {
   parse_args "$@"
-
-  resolve_target_kind
 
   if [[ -n "$TARGET_COMMIT" ]]; then
     load_commit_message

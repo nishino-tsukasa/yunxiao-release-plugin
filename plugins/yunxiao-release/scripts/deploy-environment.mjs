@@ -98,9 +98,9 @@ export const planEnvironmentDeployment = (rootArgument, environment, env = proce
   validateRemote(rootDir, config.remoteName);
   [sourceBranch, config.targetBranch, deployment.targetBranch].forEach((branch) => validateBranch(rootDir, branch, '分支'));
   if (sourceBranch === config.targetBranch || sourceBranch === deployment.targetBranch) {
-    fail('当前分支不能是 release 或测试目标分支');
+    fail('当前分支不能是 MR 目标分支或测试目标分支');
   }
-  if (config.targetBranch === deployment.targetBranch) fail('release 与测试目标分支不能相同');
+  if (config.targetBranch === deployment.targetBranch) fail('MR 目标分支与测试目标分支不能相同');
   getRemoteBranchSha(rootDir, config.remoteName, config.targetBranch);
   getRemoteBranchSha(rootDir, config.remoteName, deployment.targetBranch);
   resolveFeishuId(rootDir, config, env);

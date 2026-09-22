@@ -56,25 +56,27 @@ class PlanChangedFatFlowTest(unittest.TestCase):
 
     def test_should_package_client_should_default_true_when_not_explicit(self) -> None:
         """未显式传入 client 项目集合时，默认仍为项目生成 client 计划。"""
-        self.assertTrue(MODULE.should_package_client("monkey-order", None))
+        self.assertTrue(MODULE.should_package_client("backend-service", None))
 
-    def test_frontend_project_should_use_develop_target_branch(self) -> None:
-        """以 -web 结尾的项目应使用 develop 作为 FAT 目标分支。"""
-        config = {"branch": "fat/fat", "branches": {"frontend": "develop", "backend": "fat/fat"}}
-        self.assertTrue(MODULE.is_frontend_project("monkey-saas-web"))
-        self.assertEqual("develop", MODULE.resolve_target_branch("monkey-saas-web", config))
-        self.assertEqual("fat/fat", MODULE.resolve_target_branch("monkey-order", config))
+    def test_project_should_use_explicit_type_and_target_branch(self) -> None:
+        """项目类型和 FAT 目标分支必须来自仓库配置。"""
+        config = {"_repositoriesByProject": {
+            "frontend-app": {"projectType": "frontend", "fatTargetBranch": "test-ui"},
+            "backend-service": {"projectType": "backend", "fatTargetBranch": "test-api"},
+        }}
+        self.assertTrue(MODULE.uses_frontend_deploy("frontend-app", config))
+        self.assertEqual("test-ui", MODULE.resolve_target_branch("frontend-app", config))
+        self.assertEqual("test-api", MODULE.resolve_target_branch("backend-service", config))
 
     def test_build_plan_should_create_frontend_stage_without_backend_stages(self) -> None:
         """前端项目应只生成前端部署步骤，不应进入后端 client 或 server 映射。"""
         config = {
-            "branch": "fat/fat",
-            "branches": {"frontend": "develop", "backend": "fat/fat"},
+            "_repositoriesByProject": {"frontend-app": {"projectType": "frontend", "fatTargetBranch": "test-ui"}},
             "frontendDeploy": {
                 "defaultEnv": "fat",
                 "defaultEnvName": "default",
                 "projects": {
-                    "monkey-saas-web": {
+                    "frontend-app": {
                         "name": "frontend-pipeline",
                         "pipelineId": "3001",
                         "envs": {
@@ -89,24 +91,28 @@ class PlanChangedFatFlowTest(unittest.TestCase):
             "clientPackage": {"skipProjects": []},
             "serverDeploy": {"skipProjects": [], "projects": {}},
         }
-        plan = MODULE.build_plan(["monkey-saas-web"], config, False, set())
+        plan = MODULE.build_plan(["frontend-app"], config, False, set())
         frontend_stage = next(stage for stage in plan["stages"] if stage["name"] == "frontend-deploy")
         client_stage = next(stage for stage in plan["stages"] if stage["name"] == "client-package")
         server_stage = next(stage for stage in plan["stages"] if stage["name"] == "server-deploy")
-        self.assertEqual("develop", plan["branch"])
-        self.assertEqual("develop", frontend_stage["steps"][0]["params"]["envs"]["branch"])
+        self.assertEqual("test-ui", plan["branch"])
+        self.assertEqual("test-ui", frontend_stage["steps"][0]["params"]["envs"]["branch"])
         self.assertEqual([], client_stage["steps"])
         self.assertEqual([], server_stage["steps"])
         self.assertEqual([], plan["unresolved"])
 
     def test_build_plan_should_use_independent_target_branches_for_mixed_projects(self) -> None:
-        """混合项目计划应分别向前端 develop 和后端 fat/fat 传递分支。"""
+        """混合项目计划应分别传递各仓库显式配置的目标分支。"""
         config = {
-            "branch": "fat/fat",
-            "branches": {"frontend": "develop", "backend": "fat/fat"},
+            "_repositoriesByProject": {
+                "frontend-app": {"projectType": "frontend", "fatTargetBranch": "test-ui"},
+                "backend-service": {"projectType": "backend", "fatTargetBranch": "test-api"},
+            },
             "frontendDeploy": {
+                "defaultEnv": "testing",
+                "defaultEnvName": "primary",
                 "projects": {
-                    "monkey-saas-web": {
+                    "frontend-app": {
                         "name": "frontend-pipeline",
                         "pipelineId": "3001",
                         "envs": {"branch": "{branch}", "project": "{project}"},
@@ -120,7 +126,7 @@ class PlanChangedFatFlowTest(unittest.TestCase):
                 "frameworkPipeline": {
                     "name": "client-pipeline",
                     "pipelineId": "1001",
-                    "projects": ["monkey-order"],
+                    "projects": ["backend-service"],
                     "envs": {"branch": "{branch}", "project": "{project}", "env": "{env}"},
                 },
                 "javaServicePipelines": [],
@@ -129,7 +135,7 @@ class PlanChangedFatFlowTest(unittest.TestCase):
                 "defaultEnv": "fat",
                 "skipProjects": [],
                 "projects": {
-                    "monkey-order": {
+                    "backend-service": {
                         "name": "server-pipeline",
                         "pipelineId": "2001",
                         "envs": {"branch": "{branch}", "env": "{env}"},
@@ -137,25 +143,25 @@ class PlanChangedFatFlowTest(unittest.TestCase):
                 },
             },
         }
-        plan = MODULE.build_plan(["monkey-saas-web", "monkey-order"], config, False, None)
+        plan = MODULE.build_plan(["frontend-app", "backend-service"], config, False, None)
         frontend_stage = next(stage for stage in plan["stages"] if stage["name"] == "frontend-deploy")
         client_stage = next(stage for stage in plan["stages"] if stage["name"] == "client-package")
         server_stage = next(stage for stage in plan["stages"] if stage["name"] == "server-deploy")
         self.assertEqual("mixed", plan["branch"])
-        self.assertEqual("develop", frontend_stage["steps"][0]["params"]["envs"]["branch"])
-        self.assertEqual("fat/fat", client_stage["steps"][0]["params"]["envs"]["branch"])
-        self.assertEqual("fat/fat", server_stage["steps"][0]["params"]["envs"]["branch"])
+        self.assertEqual("test-ui", frontend_stage["steps"][0]["params"]["envs"]["branch"])
+        self.assertEqual("test-api", client_stage["steps"][0]["params"]["envs"]["branch"])
+        self.assertEqual("test-api", server_stage["steps"][0]["params"]["envs"]["branch"])
 
     def test_should_package_client_should_follow_explicit_project_set(self) -> None:
         """显式传入 client 项目集合后，只对集合内项目生成 client 计划。"""
-        explicit_projects = {"monkey-order"}
-        self.assertTrue(MODULE.should_package_client("monkey-order", explicit_projects))
-        self.assertFalse(MODULE.should_package_client("monkey-user", explicit_projects))
+        explicit_projects = {"backend-service"}
+        self.assertTrue(MODULE.should_package_client("backend-service", explicit_projects))
+        self.assertFalse(MODULE.should_package_client("other-service", explicit_projects))
 
     def test_build_plan_should_skip_client_steps_when_explicit_client_projects_is_empty(self) -> None:
         """显式指定本次无需打任何 client 包时，计划中不应生成 client 步骤。"""
         config = {
-            "branch": "fat/fat",
+            "_repositoriesByProject": {"backend-service": {"projectType": "backend", "fatTargetBranch": "test-api"}},
             "clientPackage": {
                 "defaultEnv": "fat",
                 "defaultFeishuId": "",
@@ -163,7 +169,7 @@ class PlanChangedFatFlowTest(unittest.TestCase):
                 "frameworkPipeline": {
                     "name": "client-pipeline",
                     "pipelineId": "1001",
-                    "projects": ["monkey-order"],
+                    "projects": ["backend-service"],
                     "envs": {
                         "branch": "{branch}",
                         "project": "{project}",
@@ -177,7 +183,7 @@ class PlanChangedFatFlowTest(unittest.TestCase):
                 "defaultEnv": "fat",
                 "skipProjects": [],
                 "projects": {
-                    "monkey-order": {
+                    "backend-service": {
                         "name": "server-pipeline",
                         "pipelineId": "2001",
                         "envs": {
@@ -188,7 +194,7 @@ class PlanChangedFatFlowTest(unittest.TestCase):
                 }
             }
         }
-        plan = MODULE.build_plan(["monkey-order"], config, False, set())
+        plan = MODULE.build_plan(["backend-service"], config, False, set())
         client_stage = next(stage for stage in plan["stages"] if stage["name"] == "client-package")
         server_stage = next(stage for stage in plan["stages"] if stage["name"] == "server-deploy")
         self.assertEqual([], client_stage["steps"])
@@ -198,14 +204,14 @@ class PlanChangedFatFlowTest(unittest.TestCase):
         """server 阶段必须在整个 client 阶段完成后才允许开始。"""
         plan = {
             "unresolved": [],
-            "changedProjects": ["monkey-order"],
+            "changedProjects": ["backend-service"],
             "stages": [
-                {"name": "client-package", "steps": [{"project": "monkey-order"}]},
-                {"name": "server-deploy", "steps": [{"project": "monkey-order"}]},
+                {"name": "client-package", "steps": [{"project": "backend-service"}]},
+                {"name": "server-deploy", "steps": [{"project": "backend-service"}]},
             ],
         }
         with patch.object(MODULE, "require_yunxiao_env"), \
-                patch.object(MODULE, "execute_stage", side_effect=[[{"project": "monkey-order"}], [{"project": "monkey-order"}]]) as execute_stage:
+                patch.object(MODULE, "execute_stage", side_effect=[[{"project": "backend-service"}], [{"project": "backend-service"}]]) as execute_stage:
             MODULE.execute_plan(plan, 1, 0, 1, 1, False)
 
         self.assertEqual(["client-package", "server-deploy"], [call.args[0]["name"] for call in execute_stage.call_args_list])

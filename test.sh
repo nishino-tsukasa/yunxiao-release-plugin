@@ -8,6 +8,6 @@ cd "$ROOT_DIR"
 for test_file in plugins/yunxiao-release/scripts/*.test.mjs; do
   node "$test_file"
 done
-python3 plugins/yunxiao-release/scripts/fat-flow/test_plan_changed_fat_flow.py
+python3 -m unittest discover -s plugins/yunxiao-release/scripts/fat-flow -p 'test_*.py'
 bash install.test.sh
 bash install-claude.test.sh

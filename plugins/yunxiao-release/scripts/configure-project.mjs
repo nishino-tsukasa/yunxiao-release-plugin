@@ -16,17 +16,11 @@ const legacyProjectConfigPath = '.codex/yunxiao-release.json';
 const defaultConfig = {
   organizationId: '',
   repositoryId: '',
-  remoteName: 'origin',
-  targetBranch: 'master',
   reviewerMode: 'ask',
   reviewerUserIds: [],
-  versionFile: 'package.json',
-  announcementFile: null,
   localConfigFile: '.agents/yunxiao-release.local.json',
   runtimeFile: '.agents/runtime/yunxiao-release-mr.json',
   commentsFile: '.agents/runtime/yunxiao-release-comments.md',
-  validationCommands: ['git diff --check'],
-  testDeployments: [],
 };
 
 export const buildConfig = ({ reviewMode: _reviewMode, ...existing } = {}) => ({ ...defaultConfig, ...existing });
@@ -96,7 +90,7 @@ const validateProjectPath = (rootDir, configuredPath, label) => {
 
 const validateProjectPaths = (rootDir, config) => {
   ['localConfigFile', 'runtimeFile', 'commentsFile', 'versionFile', 'announcementFile']
-    .filter((key) => config[key] !== null)
+    .filter((key) => config[key] !== null && config[key] !== undefined)
     .forEach((key) => validateProjectPath(rootDir, config[key], key));
   validateProjectPath(rootDir, projectConfigPath, 'configFile');
   validateProjectPath(rootDir, '.gitignore', 'gitignoreFile');
