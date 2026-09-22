@@ -87,6 +87,10 @@ const main = () => {
     };
   });
   const projects = entries.map(({ profile }) => profile.project);
+  const executionVariants = new Set(entries.map(({ profile }) => JSON.stringify(profile.execution)));
+  if (executionVariants.size > 1) {
+    throw new Error('同一次多仓发布的 releaseExecution 必须完全一致');
+  }
   const canonical = planEnvironmentRelease({
     environment: args.environment,
     repositories: entries,

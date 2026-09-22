@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { readUserMember } from './configure-member.mjs';
 import { planEnvironmentRelease } from './environment-release-planner.mjs';
 import { resolveReleaseConfiguration } from './release-configuration.mjs';
+import { pipelineStages } from './release-step-schema.mjs';
+
+const scriptDir = resolve(fileURLToPath(new URL('.', import.meta.url)));
 
 const fail = (message) => {
   throw new Error(message);
@@ -61,6 +64,13 @@ const getRemoteBranchSha = (rootDir, remoteName, branch) => {
   return line.split(/\s+/)[0];
 };
 
+const listChangedFiles = (rootDir, remoteName, branch) => {
+  fetchBranch(rootDir, remoteName, branch);
+  return runGit(rootDir, [
+    'diff', '--name-only', `refs/remotes/${remoteName}/${branch}...HEAD`,
+  ]).stdout.split(/\r?\n/).filter(Boolean);
+};
+
 const normalizeFeishuId = (value) => {
   const feishuId = value === undefined || value === null ? undefined : String(value).trim() || undefined;
   if (feishuId && /[\r\n\0]/.test(feishuId)) fail('feishuId 不能包含换行符');
@@ -88,9 +98,6 @@ export const planEnvironmentDeployment = (rootArgument, environment, env = proce
   const profile = resolveReleaseConfiguration(rootDir, env);
   const configured = profile.environments[environment];
   if (!configured) fail(`未配置发布环境: ${environment}`);
-  if (configured.steps.some((step) => step.type === 'pipeline')) {
-    fail(`环境 ${environment} 包含 pipeline 步骤；当前单仓环境执行器不支持，FAT 流程请使用 yunxiao-release fat-flow`);
-  }
   const manual = configured.steps.find((step) => step.type === 'manual-link');
   if (manual) return { mode: 'manual', environment, webUrl: manual.webUrl };
   const repositoryRoot = resolve(runGit(rootDir, ['rev-parse', '--show-toplevel']).stdout);
@@ -109,24 +116,41 @@ export const planEnvironmentDeployment = (rootArgument, environment, env = proce
   getRemoteBranchSha(rootDir, profile.repository.remoteName, profile.mergeRequest.targetBranch);
   getRemoteBranchSha(rootDir, profile.repository.remoteName, configured.branch);
   resolveFeishuId(rootDir, profile.storage.localConfigFile, env);
+  const hasPipeline = configured.steps.some((step) => step.type === 'pipeline');
+  const hasWebhook = configured.steps.some((step) => step.type === 'webhook');
+  if (hasPipeline && hasWebhook) fail(`环境 ${environment} 不能同时配置 pipeline 和 webhook`);
   const releasePlan = planEnvironmentRelease({
     environment,
-    repositories: [{ profile, sourceBranch, changedFiles: [] }],
-    allowedStepTypes: ['promote-branch', 'webhook', 'manual-link'],
+    repositories: [{
+      profile,
+      sourceBranch,
+      changedFiles: listChangedFiles(rootDir, profile.repository.remoteName, profile.mergeRequest.targetBranch),
+    }],
   });
   if (releasePlan.unresolved.length) fail(releasePlan.unresolved.join('；'));
   const promotion = releasePlan.stages.find((stage) => stage.name === 'promote-branch')?.steps[0];
   const webhook = releasePlan.stages.find((stage) => stage.name === 'webhook')?.steps[0];
-  if (!promotion || !webhook) fail(`环境 ${environment} 缺少 promote-branch 或 webhook 步骤`);
+  const pipelinePlan = releasePlan.stages.filter(({ name }) => pipelineStages.includes(name));
+  if (!promotion || (!webhook && pipelinePlan.length === 0)) {
+    fail(`环境 ${environment} 缺少 promote-branch 及发布步骤`);
+  }
   return {
-    mode: 'automatic',
+    mode: hasPipeline ? 'automatic-pipeline' : 'automatic-webhook',
     environment,
     remoteName: promotion.remoteName,
     sourceBranch: promotion.sourceBranch,
     releaseBranch: promotion.prerequisiteBranch,
     targetBranch: promotion.targetBranch,
-    hookUrl: webhook.hookUrl,
-    ...(webhook.webUrl ? { webUrl: webhook.webUrl } : {}),
+    ...(webhook ? { hookUrl: webhook.hookUrl, ...(webhook.webUrl ? { webUrl: webhook.webUrl } : {}) } : {}),
+    ...(pipelinePlan.length ? {
+      pipelinePlan: {
+        environment,
+        changedProjects: [profile.project],
+        stages: pipelinePlan,
+        unresolved: releasePlan.unresolved,
+        execution: profile.execution,
+      },
+    } : {}),
   };
 };
 
@@ -168,6 +192,29 @@ const triggerWebhook = async (hookUrl, feishuId, branch, fetchImpl) => {
   if (!response.ok) fail(`Webhook 返回 HTTP ${response.status}`);
 };
 
+const withFeishuId = (plan, feishuId) => ({
+  ...plan,
+  stages: plan.stages.map((stage) => ({
+    ...stage,
+    steps: stage.steps.map((step) => ({
+      ...step,
+      params: step.params?.envs && Object.hasOwn(step.params.envs, 'feishuId')
+        ? { ...step.params, envs: { ...step.params.envs, ...(feishuId ? { feishuId } : {}) } }
+        : step.params,
+    })),
+  })),
+});
+
+const executePipelinePlan = (plan, temporaryRoot) => {
+  const planPath = resolve(temporaryRoot, 'pipeline-plan.json');
+  writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`, { mode: 0o600 });
+  const result = spawnSync('python3', [
+    '-u', resolve(scriptDir, 'fat-flow/plan_changed_fat_flow.py'), '--plan-input', planPath, '--run',
+  ], { stdio: 'inherit' });
+  if (result.error) fail(`流水线执行器启动失败: ${result.error.message}`);
+  if (result.status !== 0) fail(`流水线执行失败，退出码 ${result.status ?? 1}`);
+};
+
 // release 合入当前分支后，在隔离 worktree 更新测试分支；任何结果都尝试清理临时目录。
 export const deployEnvironment = async (rootArgument, environment, options = {}) => {
   const rootDir = realpathSync(resolve(rootArgument));
@@ -197,7 +244,12 @@ export const deployEnvironment = async (rootArgument, environment, options = {})
       fail(`远端 ${plan.targetBranch} 未包含当前发布代码`);
     }
     try {
-      await triggerWebhook(plan.hookUrl, feishuId, plan.targetBranch, options.fetchImpl ?? fetch);
+      if (plan.mode === 'automatic-pipeline') {
+        const runtimePlan = withFeishuId(plan.pipelinePlan, feishuId);
+        (options.executePipelinePlan ?? executePipelinePlan)(runtimePlan, temporaryRoot);
+      } else {
+        await triggerWebhook(plan.hookUrl, feishuId, plan.targetBranch, options.fetchImpl ?? fetch);
+      }
     } catch (error) {
       fail(`代码已推送，但构建未触发: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -210,7 +262,12 @@ export const deployEnvironment = async (rootArgument, environment, options = {})
     fail(`${message}${cleanupError ? `；${cleanupError}` : ''}`);
   }
   if (cleanupError) fail(cleanupError);
-  return { ...plan, sourceCommit, targetCommit, webhookTriggered: true };
+  return {
+    ...plan,
+    sourceCommit,
+    targetCommit,
+    ...(plan.mode === 'automatic-pipeline' ? { pipelineTriggered: true } : { webhookTriggered: true }),
+  };
 };
 
 const printHelp = () => {

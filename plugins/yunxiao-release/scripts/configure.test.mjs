@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 
-import { buildConfig, configureProject, writeProjectConfig } from './configure-project.mjs';
+import { buildConfig, configurePrivatePaths, configureProject, writeProjectConfig } from './configure-project.mjs';
 import {
   readMemberFromEnvContent,
   readUserMember,
@@ -45,7 +45,7 @@ const run = () => {
 
   const simpleRoot = mkdtempSync(resolve(tmpdir(), 'yunxiao-release-simple-ignore-'));
   execFileSync('git', ['init'], { cwd: simpleRoot, stdio: 'ignore' });
-  configureProject(simpleRoot);
+  configurePrivatePaths(simpleRoot);
   assert.equal(
     readFileSync(resolve(simpleRoot, '.gitignore'), 'utf8'),
     '/.agents/yunxiao-release.local.json\n/.agents/runtime/\n',
@@ -55,11 +55,12 @@ const run = () => {
   assert.equal(spawnSync('git', ['check-ignore', '.agents/runtime/state.json'], { cwd: simpleRoot }).status, 0);
   assert.equal(spawnSync('git', ['check-ignore', '.codex/other.json'], { cwd: simpleRoot }).status, 1);
   assert.equal(existsSync(resolve(simpleRoot, '.codex')), false);
+  assert.equal(existsSync(resolve(simpleRoot, '.agents/yunxiao-release.json')), false);
   writeFileSync(
     resolve(simpleRoot, '.gitignore'),
     '/.agents/yunxiao-release.local.json\n/.agents/runtime/\n/.agents/yunxiao-release.local.json\n/.agents/runtime/\n',
   );
-  configureProject(simpleRoot);
+  configurePrivatePaths(simpleRoot);
   assert.equal(
     readFileSync(resolve(simpleRoot, '.gitignore'), 'utf8'),
     '/.agents/yunxiao-release.local.json\n/.agents/runtime/\n',

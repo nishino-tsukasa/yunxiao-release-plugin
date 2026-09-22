@@ -9,6 +9,8 @@
 | 用户级成员配置 | `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/member.json` | 不在项目中；Codex 与 Claude Code 共用 |
 | 全局默认配置 | `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/global-defaults.json` | 仅跨仓库一致的组织级、存储和执行默认值；不含任何仓库差异字段 |
 | 全局仓库配置 | `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/global-repositories.json` | 按标准化 Git remote 区分仓库配置 |
+
+项目 `.agents/yunxiao-release.json` 存在时，它完整替换当前仓库的全局仓库项；不存在时才使用全局仓库项。最终配置为“全局默认 + 选中的完整仓库配置”，项目配置与全局仓库配置不逐字段或递归合并。
 | 用户级 Token | `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/credentials.env` | 固定凭据来源；权限 `600` |
 | MR 运行状态 | `.agents/runtime/yunxiao-release-mr.json` | 忽略；Codex 与 Claude Code 共用 |
 | 评论处理文档 | `.agents/runtime/yunxiao-release-comments.md` | 忽略；Codex 与 Claude Code 共用 |
@@ -32,12 +34,12 @@
 
 成员配置禁止保存 Token、Authorization 头或任何可还原 Token 的信息。
 
-共享配置字段必须按下表解释；缺失的可选字段按默认值补齐，必填字段不得猜测：
+字段的完整维护表见 [`configuration-fields.md`](configuration-fields.md)。共享配置字段必须按下表解释；缺失的可选字段按默认值补齐，必填字段不得猜测：
 
 | 字段 | 默认值 | 获取来源或规则 |
 |---|---|---|
 | `organizationId` | 无，必填；配置流程无法获取或未确认时停止 | `get_current_organization_info` 返回的当前组织，或用户从云效管理后台基本信息提供；必须确认 |
-| `repositoryId` | 无，必填；配置流程无法唯一确认时停止 | 从 Git remote 提取仓库名，用 `list_repositories` 搜索候选；用户确认后以 `get_repository` 返回的数字 `id` 核对，并将 `String(id)` 作为十进制字符串写入 |
+| `repositoryId` | MR 流程必填；配置流程无法唯一确认时停止 | 已有值直接使用；缺失时以标准化 Git remote 调用 `get_repository` 精确核实，将 `String(id)` 持久化后复用 |
 | `remoteName` | 无，配置必填 | 当前项目 `git remote -v` 中指向目标云效仓库的 remote |
 | `targetBranch` | 无，配置必填 | 项目分支策略和项目维护者决定；使用 `get_branch` 验证存在，不从仓库响应推断默认分支 |
 | `reviewerMode` | `ask` | MR 评审人选择策略，只允许 `ask|fixed` |
@@ -55,7 +57,7 @@
 
 旧 `testDeployments` 以及旧 `projects.json` 中 FAT 配置的 `projectType`、`fatTargetBranch`、`commitMessagePattern`、`clientDetection` 和 `fatFlow` 可继续使用。Release Configuration module 只在兼容边界将其转换为 `environments`；Environment Release Planner 始终只消费统一后的 profile，不包含项目名称或前后端识别规则。新的拆分配置直接提供 `environments`，不得把 `fatFlow` 写入 `global-defaults.json`。
 
-含 `pipeline` 步骤时，全局默认配置必须提供完整 `releaseExecution`：`pollIntervalSeconds`、`clientInitialWaitSeconds`、`clientTimeoutSeconds`、`serverTimeoutSeconds`，均为非负整数。`pipeline.stage` 只允许 `frontend-deploy`、`client-package`、`server-deploy`。一个 Client 步骤可用 `candidates` 提供多条等价流水线，Planner 按当前计划负载选择。
+含 `pipeline` 步骤时，有效配置必须提供完整 `releaseExecution`：`pollIntervalSeconds` 以及实际使用阶段的 `initialWaitSeconds`、`timeoutSeconds`，均为非负整数。全局仓库配置通常复用全局默认值；需要脱离全局配置独立工作的项目文件可自带相同字段。同一次多仓发布的执行参数不一致时必须在触发前失败。`pipeline.stage` 只允许 `frontend-client-deploy`、`backend-client-package`、`backend-server-deploy`。一个 Backend Client 步骤可用 `candidates` 提供多条等价流水线，Planner 按当前计划负载选择。旧阶段名和旧执行字段只在读取边界转换。
 
 ## 环境发布
 
@@ -81,7 +83,7 @@
 
 - 自动发布：`branch` 配合 `promote-branch` 与后续 `webhook` 或 `pipeline` 步骤；待发布的远端源分支使用 MR 配置的 `targetBranch`。
 - 手动发布：`branch` 为 `null`，使用 `manual-link` 步骤；只返回人工发布入口，不执行 Git、流水线或 webhook。
-- 当前 `deploy-environment` 单仓执行器只接受 `promote-branch + webhook` 或 `manual-link`；含 `pipeline` 的 FAT 计划必须走 `yunxiao-release fat-flow`。Planner 能统一表达两类计划，但执行器统一不属于本阶段改造范围，禁止静默跳过步骤。
+- `deploy-environment` 与 `yunxiao-release fat-flow` 共用 Planner 和 Pipeline Executor；前者生成单仓计划，后者生成多仓计划。一个环境不能同时配置 `pipeline` 与 `webhook`。
 - 所有 URL 只允许 HTTP(S)。每次只发布一个环境，不根据 `fat`、`uat`、`production` 等名称猜测模式。
 - 自动发布的 webhook 请求固定为 `POST application/json`。`feishuId` 已配置时请求体是 `{ "feishuId": "...", "branch": "<targetBranch>" }`，未配置时仅发送 `{ "branch": "<targetBranch>" }`，不阻断发布。
 
@@ -89,7 +91,7 @@
 
 `feishuId` 是可选成员字段，与 `displayName`、`userId` 存放在同一个用户级或项目级成员 JSON 中。项目 `localConfigFile` 中存在该值时优先，否则读取用户级 `member.json`；未配置不报错。身份配置更新必须保留已有 `feishuId`，日志和最终输出不得显示该值。
 
-用户明确要求发布具体自动测试环境时，先以 `--dry-run` 预检并展示全部副作用，预检通过后直接执行，不再要求确认；未明确环境且无法唯一匹配时只询问一次环境选择。执行时要求干净工作区，把配置的远端源分支普通合入当前分支，再从远端测试分支创建临时 detached worktree，普通合入当前 HEAD，非强制推送并验证远端提交后触发 webhook。成功或失败均强制清理 worktree；清理失败必须报告残留路径。Webhook 失败不回滚已经推送的测试分支。
+用户明确要求发布具体自动测试环境时，先以 `--dry-run` 预检并展示全部副作用，预检通过后直接执行，不再要求确认；未明确环境且无法唯一匹配时只询问一次环境选择。执行时要求干净工作区，把配置的远端源分支普通合入当前分支，再从远端测试分支创建临时 detached worktree，普通合入当前 HEAD，非强制推送并验证远端提交后触发配置的 pipeline 或 webhook。成功或失败均强制清理 worktree；清理失败必须报告残留路径。触发失败不回滚已经推送的测试分支。
 
 用户要求“发版”“上线”“发布线上”等操作且意图是正式环境时，必须先按当前 Git、MR 和远端状态完成或重新核验合并前准备，再返回生产环境 `manual-link`；合并前准备未完成时停止。对应 `environments` 项缺失时，只完成合并前准备并说明未配置生产发布入口，不执行环境发布脚本，也不要求补充配置。不得仅凭上述词语猜测用户要发布正式环境还是测试环境。
 

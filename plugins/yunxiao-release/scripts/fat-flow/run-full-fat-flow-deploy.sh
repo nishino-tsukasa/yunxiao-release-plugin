@@ -313,7 +313,7 @@ run_single_deploy() {
     identity_args=(--projects "$projects_csv" --client-projects "$client_projects_csv")
   fi
   log_info "开始执行统一 FAT 部署: projects=${projects_csv} clientProjects=${client_projects_csv:-none}"
-  log_progress "stage=deploy status=started projects=${projects_csv} clientProjects=${client_projects_csv:-none} order=frontend-deploy-then-client-package-then-server-deploy"
+  log_progress "stage=deploy status=started projects=${projects_csv} clientProjects=${client_projects_csv:-none} order=frontend-client-deploy-then-backend-client-package-then-backend-server-deploy"
   if [[ "$SCRIPT_VERBOSE" == "1" ]]; then
     "$PLAN_DEPLOY_SCRIPT" "${identity_args[@]}" --branch "$SCRIPT_BRANCH" --run --verbose || fail "统一 FAT 部署失败"
     return

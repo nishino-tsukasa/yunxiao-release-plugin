@@ -32,13 +32,13 @@ const profile = (repositoryKey, steps) => ({
 
 {
   const alternatives = [
-    { type: 'pipeline', stage: 'client-package', pipelineName: 'client-1', pipelineId: '100', params: { envs: {} } },
-    { type: 'pipeline', stage: 'client-package', pipelineName: 'client-2', pipelineId: '101', params: { envs: {} } },
+    { type: 'pipeline', stage: 'backend-client-package', pipelineName: 'client-1', pipelineId: '100', params: { envs: {} } },
+    { type: 'pipeline', stage: 'backend-client-package', pipelineName: 'client-2', pipelineId: '101', params: { envs: {} } },
   ];
   const plan = planEnvironmentRelease({
     environment: 'fat',
     repositories: ['a', 'b', 'c'].map((name) => ({
-      profile: profile(`example.com/team/${name}`, [{ type: 'pipeline', stage: 'client-package', alternatives }]),
+      profile: profile(`example.com/team/${name}`, [{ type: 'pipeline', stage: 'backend-client-package', alternatives }]),
       sourceBranch: 'feature/demo',
       includeClient: true,
     })),
@@ -49,8 +49,8 @@ const profile = (repositoryKey, steps) => ({
 {
   const current = profile('example.com/team/backend-app', [{ type: 'promote-branch' }]);
   current.environments.fat.issues = [
-    { stage: 'client-package', message: 'missing client' },
-    { stage: 'server-deploy', message: 'missing server' },
+    { stage: 'backend-client-package', message: 'missing client' },
+    { stage: 'backend-server-deploy', message: 'missing server' },
   ];
   const plan = planEnvironmentRelease({
     environment: 'fat',
@@ -65,14 +65,14 @@ const profile = (repositoryKey, steps) => ({
     repositories: [{
       profile: profile('example.com/team/backend-app', [
         { type: 'promote-branch' },
-        { type: 'pipeline', stage: 'client-package', pipelineId: '100', pipelineName: 'client', when: { changedPaths: ['client/'] }, params: { envs: {} } },
-        { type: 'pipeline', stage: 'server-deploy', pipelineId: '200', pipelineName: 'server', params: { envs: {} } },
+        { type: 'pipeline', stage: 'backend-client-package', pipelineId: '100', pipelineName: 'client', when: { changedPaths: ['client/'] }, params: { envs: {} } },
+        { type: 'pipeline', stage: 'backend-server-deploy', pipelineId: '200', pipelineName: 'server', params: { envs: {} } },
       ]),
       sourceBranch: 'feature/demo',
       changedFiles: ['server/Main.java'],
     }],
   });
-  assert.deepEqual(plan.stages.map(({ name }) => name), ['promote-branch', 'server-deploy']);
+  assert.deepEqual(plan.stages.map(({ name }) => name), ['promote-branch', 'backend-server-deploy']);
   assert.equal(plan.stages[1].steps[0].pipelineId, '200');
 }
 

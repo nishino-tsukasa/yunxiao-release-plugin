@@ -29,7 +29,7 @@ writeFileSync(repositoriesPath, `${JSON.stringify({
       environments: {
         fat: {
           branch: 'testing',
-          steps: [{ type: 'pipeline', stage: 'server-deploy', pipelineName: 'server', pipelineId: '200', params: { envs: {} } }],
+          steps: [{ type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'server', pipelineId: '200', params: { envs: {} } }],
         },
       },
     },
@@ -44,7 +44,7 @@ try {
   ], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   const plan = JSON.parse(readFileSync(outputPath));
-  assert.deepEqual(plan.stages.map(({ name }) => name), ['frontend-deploy', 'client-package', 'server-deploy']);
+  assert.deepEqual(plan.stages.map(({ name }) => name), ['frontend-client-deploy', 'backend-client-package', 'backend-server-deploy']);
   assert.equal(plan.stages[2].steps[0].pipelineId, '200');
   assert.deepEqual(plan.unresolved, []);
 
@@ -60,10 +60,14 @@ try {
   spawnSync('git', ['remote', 'add', 'origin', 'git@example.com:team/backend-app.git'], { cwd: repository });
   mkdirSync(resolve(repository, '.agents'));
   writeFileSync(resolve(repository, '.agents/yunxiao-release.json'), `${JSON.stringify({
+    organizationId: 'org-1', repositoryId: 'project-1', remoteName: 'origin', targetBranch: 'release',
+    reviewerMode: 'ask', reviewerUserIds: [], versionFile: null, announcementFile: null,
+    localConfigFile: '.agents/local.json', runtimeFile: '.agents/runtime.json', commentsFile: '.agents/comments.md',
+    validationCommands: ['git diff --check'],
     environments: {
       fat: {
         branch: 'project-testing',
-        steps: [{ type: 'pipeline', stage: 'server-deploy', pipelineName: 'project-server', pipelineId: '201', params: { envs: {} } }],
+        steps: [{ type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'project-server', pipelineId: '201', params: { envs: {} } }],
       },
     },
   })}\n`);

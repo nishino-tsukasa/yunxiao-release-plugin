@@ -32,12 +32,12 @@ const readField = (profile, field, environment) => {
 };
 
 const hasClientStage = (profile, environment) => profile.environments[environment]?.steps.some(
-  (step) => step.type === 'pipeline' && step.stage === 'client-package',
+  (step) => step.type === 'pipeline' && step.stage === 'backend-client-package',
 );
 
 const needsClient = (profile, repo, branch, environment) => {
   const step = profile.environments[environment]?.steps.find(
-    (candidate) => candidate.type === 'pipeline' && candidate.stage === 'client-package',
+    (candidate) => candidate.type === 'pipeline' && candidate.stage === 'backend-client-package',
   );
   if (!step) return false;
   if (!step.when?.changedPaths) return true;

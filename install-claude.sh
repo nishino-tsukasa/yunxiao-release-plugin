@@ -78,8 +78,7 @@ main() {
   configure_claude_plugin </dev/tty
 
   readonly PROJECT_ROOT="$(git rev-parse --show-toplevel)"
-  (cd "$PROJECT_ROOT" && node "$project_script")
-  test -f "$PROJECT_ROOT/.agents/yunxiao-release.json" || { echo '项目配置生成失败' >&2; exit 1; }
+  (cd "$PROJECT_ROOT" && node "$project_script" --ignore-only)
 }
 
 if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]}" == "$0" ]]; then

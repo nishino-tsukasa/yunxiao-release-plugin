@@ -25,16 +25,16 @@ export const planEnvironmentRelease = ({ environment, repositories, allowedStepT
     }
     for (const issue of configured.issues ?? []) {
       if (allowedStepTypes && !allowedStepTypes.includes('pipeline')) continue;
-      if (issue.stage === 'client-package' && item.includeClient === false) continue;
-      if (['frontend-deploy', 'server-deploy'].includes(issue.stage) && item.includeServer === false) continue;
+      if (issue.stage === 'backend-client-package' && item.includeClient === false) continue;
+      if (['frontend-client-deploy', 'backend-server-deploy'].includes(issue.stage) && item.includeServer === false) continue;
       unresolved.push(issue.message);
     }
     for (const step of configured.steps) {
       if (allowedStepTypes && !allowedStepTypes.includes(step.type)) continue;
-      const isClientStep = step.type === 'pipeline' && step.stage === 'client-package';
+      const isClientStep = step.type === 'pipeline' && step.stage === 'backend-client-package';
       if (isClientStep && item.includeClient === false) continue;
       if (!(isClientStep && item.includeClient === true) && !matchesCondition(step.when, changedFiles)) continue;
-      if (step.type === 'pipeline' && ['frontend-deploy', 'server-deploy'].includes(step.stage) && item.includeServer === false) continue;
+      if (step.type === 'pipeline' && ['frontend-client-deploy', 'backend-server-deploy'].includes(step.stage) && item.includeServer === false) continue;
       const common = { project: profile.project, repositoryKey: profile.repository.repositoryKey };
       let planned;
       if (step.type === 'promote-branch') {
@@ -58,7 +58,7 @@ export const planEnvironmentRelease = ({ environment, repositories, allowedStepT
           })[0];
           const key = String(selected.pipelineId || selected.pipelineName);
           pipelineLoad.set(key, (pipelineLoad.get(key) ?? 0) + 1);
-        } else if (step.type === 'pipeline' && step.stage === 'client-package') {
+        } else if (step.type === 'pipeline' && step.stage === 'backend-client-package') {
           const key = String(step.pipelineId || step.pipelineName);
           pipelineLoad.set(key, (pipelineLoad.get(key) ?? 0) + 1);
         }

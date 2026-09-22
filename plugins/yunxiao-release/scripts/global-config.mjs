@@ -83,13 +83,18 @@ export const readGlobalProjectConfig = (rootDir, env = process.env, remoteName =
   const global = readGlobalConfigFiles(env);
   const configuredRemote = remoteName || global.defaults.remoteName || '';
   const candidates = configuredRemote ? [configuredRemote] : listRemoteNames(rootDir);
-  const matches = candidates.map((name) => ({ name, key: normalizeRemoteUrl(readRemoteUrl(rootDir, name)) }))
+  const resolved = candidates.map((name) => ({ name, key: normalizeRemoteUrl(readRemoteUrl(rootDir, name)) }))
+    .filter(({ key }) => key);
+  const matches = resolved
     .filter(({ key }) => key && Object.hasOwn(global.repositories, key));
   if (matches.length > 1) throw new Error('多个 Git remote 命中全局仓库配置，请显式配置 remoteName');
-  const repositoryKey = matches[0]?.key ?? null;
-  const repository = repositoryKey ? global.repositories[repositoryKey] ?? {} : {};
+  const selected = matches[0] ?? (configuredRemote ? resolved[0] : null);
+  const repositoryKey = selected?.key ?? null;
+  const repository = repositoryKey && Object.hasOwn(global.repositories, repositoryKey)
+    ? global.repositories[repositoryKey]
+    : {};
   if (!repository || typeof repository !== 'object' || Array.isArray(repository)) {
     throw new Error(`全局仓库配置必须是对象: ${repositoryKey}`);
   }
-  return { config: { ...global.defaults, ...repository }, repositoryKey, remoteName: matches[0]?.name ?? configuredRemote, ...global };
+  return { config: { ...global.defaults, ...repository }, repositoryKey, remoteName: selected?.name ?? configuredRemote, ...global };
 };

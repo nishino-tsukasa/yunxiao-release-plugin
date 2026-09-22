@@ -57,6 +57,57 @@ const common = {
     defaults: { organizationId: 'org-1' },
     repository: {
       ...common,
+      repositoryId: 'global-repository',
+      environments: { uat: { branch: 'uat', steps: [{ type: 'promote-branch' }] } },
+    },
+    project: {
+      ...common,
+      repositoryId: 'project-repository',
+      environments: { fat: { branch: 'develop', steps: [{ type: 'promote-branch' }] } },
+    },
+  });
+  try {
+    const profile = resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env);
+    assert.equal(profile.repository.repositoryId, 'project-repository');
+    assert.deepEqual(Object.keys(profile.environments), ['fat']);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
+{
+  const fixture = createFixture({
+    defaults: {
+      organizationId: 'org-1',
+      releaseExecution: { pollIntervalSeconds: 10, clientInitialWaitSeconds: 60, clientTimeoutSeconds: 600, serverTimeoutSeconds: 1800 },
+    },
+    repository: {
+      ...common,
+      environments: {
+        fat: {
+          branch: 'testing',
+          steps: [{ type: 'pipeline', stage: 'server-deploy', pipelineName: 'legacy', pipelineId: '200' }],
+        },
+      },
+    },
+  });
+  try {
+    const profile = resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env);
+    assert.equal(profile.environments.fat.steps[0].stage, 'backend-server-deploy');
+    assert.deepEqual(profile.execution.stages['backend-server-deploy'], {
+      initialWaitSeconds: 0,
+      timeoutSeconds: 1800,
+    });
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
+{
+  const fixture = createFixture({
+    defaults: { organizationId: 'org-1' },
+    repository: {
+      ...common,
       testDeployments: [
         { environment: 'fat', targetBranch: 'develop', hookUrl: 'https://example.com/hook', webUrl: 'https://example.com/flow' },
         { environment: 'production', webUrl: 'https://example.com/production' },
@@ -99,7 +150,7 @@ const common = {
           branch: 'testing',
           steps: [
             { type: 'promote-branch' },
-            { type: 'pipeline', stage: 'server-deploy', pipelineName: 'canonical', pipelineId: '200', params: { envs: { branch: 'testing' } } },
+            { type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'canonical', pipelineId: '200', params: { envs: { branch: 'testing' } } },
           ],
         },
       },
@@ -141,7 +192,7 @@ const common = {
         },
         serverDeploy: {
           defaultEnv: 'fat', skipProjects: [],
-          projects: { 'backend-app': { name: 'server-deploy', pipelineId: '200', envs: { branch: '{branch}', project: '{project}' } } },
+          projects: { 'backend-app': { name: 'backend-server-deploy', pipelineId: '200', envs: { branch: '{branch}', project: '{project}' } } },
         },
         frontendDeploy: { defaultEnv: 'fat', defaultEnvName: 'default', projects: {} },
         execution: { pollIntervalSeconds: 10, clientInitialWaitSeconds: 60, clientTimeoutSeconds: 600, serverTimeoutSeconds: 1800 },
@@ -161,8 +212,8 @@ const common = {
     assert.equal(profile.environments.fat.branch, 'fat/fat');
     assert.deepEqual(profile.environments.fat.steps.map(({ type, stage }) => [type, stage]), [
       ['promote-branch', undefined],
-      ['pipeline', 'client-package'],
-      ['pipeline', 'server-deploy'],
+      ['pipeline', 'backend-client-package'],
+      ['pipeline', 'backend-server-deploy'],
     ]);
     assert.deepEqual(profile.environments.fat.steps[1].when, { changedPaths: ['client/'] });
     assert.deepEqual(profile.environments.fat.steps[1].alternatives.map(({ pipelineId }) => pipelineId), ['100', '101']);
@@ -196,7 +247,7 @@ const common = {
   });
   try {
     const profile = resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env);
-    assert.deepEqual(profile.environments.fat.issues.map(({ stage }) => stage), ['client-package', 'server-deploy']);
+    assert.deepEqual(profile.environments.fat.issues.map(({ stage }) => stage), ['backend-client-package', 'backend-server-deploy']);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -222,7 +273,7 @@ const common = {
     defaults: { organizationId: 'org-1' },
     repository: {
       ...common,
-      environments: { fat: { branch: 'testing', steps: [{ type: 'pipeline', stage: 'server-deploy', pipelineId: '200' }] } },
+      environments: { fat: { branch: 'testing', steps: [{ type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'server', pipelineId: '200' }] } },
     },
   });
   try {
@@ -242,6 +293,106 @@ const common = {
       () => resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env),
       /全局默认配置不能包含仓库差异字段: targetBranch/,
     );
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
+{
+  const fixture = createFixture({
+    defaults: {
+      organizationId: 'org-1',
+      releaseExecution: { pollIntervalSeconds: 1, clientInitialWaitSeconds: 0, clientTimeoutSeconds: 10, serverTimeoutSeconds: 10 },
+    },
+    repository: {
+      ...common,
+      environments: {
+        fat: {
+          branch: 'testing',
+          steps: [
+            { type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'server', pipelineId: '200' },
+            { type: 'webhook', hookUrl: 'https://example.com/hook' },
+          ],
+        },
+      },
+    },
+  });
+  try {
+    assert.throws(() => resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env), /不能同时配置 pipeline 和 webhook/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
+{
+  const fixture = createFixture({
+    defaults: {
+      organizationId: 'org-1',
+      releaseExecution: { pollIntervalSeconds: 1, clientInitialWaitSeconds: 0, clientTimeoutSeconds: 10, serverTimeoutSeconds: 10 },
+    },
+    repository: {
+      ...common,
+      environments: { fat: { branch: 'testing', steps: [{ type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'server', pipelineId: '' }] } },
+    },
+  });
+  try {
+    assert.throws(() => resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env), /pipelineId 必须是非空字符串/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
+{
+  const fixture = createFixture({
+    legacy: true,
+    defaults: {
+      organizationId: 'org-1',
+      fatFlow: {
+        frontendDeploy: {
+          defaultEnv: 'fat',
+          defaultEnvName: 'default',
+          projects: { 'backend-app': { name: 'frontend', pipelineId: '300', envs: { branch: '{branch}' } } },
+        },
+        execution: { pollIntervalSeconds: 10, clientInitialWaitSeconds: 60, clientTimeoutSeconds: 600, serverTimeoutSeconds: 1800 },
+      },
+    },
+    repository: {
+      ...common,
+      projectType: 'frontend',
+      fatTargetBranch: 'develop',
+      testDeployments: [{ environment: 'fat', targetBranch: 'develop', hookUrl: 'https://example.com/hook' }],
+    },
+  });
+  try {
+    const profile = resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env);
+    assert.equal(profile.environments.fat.steps.some(({ type }) => type === 'webhook'), false);
+    assert.equal(profile.environments.fat.steps.some(({ type }) => type === 'pipeline'), true);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
+{
+  const fixture = createFixture({
+    defaults: {
+      organizationId: 'org-1',
+      releaseExecution: {
+        pollIntervalSeconds: 1,
+        stages: {
+          'backend-server-deploy': { timeoutSeconds: 30 },
+          'frontend-client-deploy': { timeoutSeconds: 20 },
+        },
+      },
+    },
+    repository: {
+      ...common,
+      environments: { fat: { branch: 'testing', steps: [{ type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'server', pipelineId: '200' }] } },
+    },
+  });
+  try {
+    assert.deepEqual(Object.keys(resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env).execution.stages), [
+      'frontend-client-deploy', 'backend-server-deploy',
+    ]);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

@@ -114,7 +114,7 @@ const run = async () => {
     rmSync(resolve(repo, '.agents/yunxiao-release.local.json'));
     assert.equal(
       planEnvironmentDeployment(repo, 'fat', { ...process.env, XDG_CONFIG_HOME: xdgConfigHome }).mode,
-      'automatic',
+      'automatic-webhook',
     );
     writeJson(resolve(repo, '.agents/yunxiao-release.local.json'), {
       displayName: '项目成员',
@@ -163,19 +163,35 @@ const run = async () => {
     sharedConfig.environments = {
       fat: {
         branch: 'develop',
-        steps: [{ type: 'promote-branch' }, { type: 'pipeline', stage: 'server-deploy', pipelineId: '200', params: { envs: {} } }],
+        steps: [
+          { type: 'promote-branch' },
+          { type: 'pipeline', stage: 'backend-client-package', pipelineName: 'client', pipelineId: '100', params: { envs: {} }, when: { changedPaths: ['feature.txt'] } },
+          { type: 'pipeline', stage: 'backend-server-deploy', pipelineName: 'server', pipelineId: '200', params: { envs: {} } },
+        ],
       },
     };
     writeJson(sharedConfigPath, sharedConfig);
-    assert.throws(
-      () => planEnvironmentDeployment(repo, 'fat', { ...process.env, XDG_CONFIG_HOME: xdgConfigHome }),
-      /当前单仓环境执行器不支持/,
+    git(repo, ['add', sharedConfigPath]);
+    git(repo, ['commit', '-m', 'configure pipeline deployment']);
+    assert.equal(
+      planEnvironmentDeployment(repo, 'fat', { ...process.env, XDG_CONFIG_HOME: xdgConfigHome }).mode,
+      'automatic-pipeline',
     );
+    let executedPipelinePlan;
+    const pipelineResult = await deployEnvironment(repo, 'fat', {
+      env: { ...process.env, XDG_CONFIG_HOME: xdgConfigHome },
+      executePipelinePlan: (plan) => { executedPipelinePlan = plan; },
+    });
+    assert.equal(pipelineResult.pipelineTriggered, true);
+    assert.deepEqual(executedPipelinePlan.stages.map(({ name }) => name), ['backend-client-package', 'backend-server-deploy']);
+    assert.deepEqual(executedPipelinePlan.stages[1].steps[0].params, { envs: {} });
     sharedConfig.environments.fat.steps.push({ type: 'webhook', hookUrl: `http://127.0.0.1:${port}/hook` });
     writeJson(sharedConfigPath, sharedConfig);
+    git(repo, ['add', sharedConfigPath]);
+    git(repo, ['commit', '-m', 'configure invalid duplicate trigger']);
     assert.throws(
       () => planEnvironmentDeployment(repo, 'fat', { ...process.env, XDG_CONFIG_HOME: xdgConfigHome }),
-      /当前单仓环境执行器不支持/,
+      /不能同时配置 pipeline 和 webhook/,
     );
     delete sharedConfig.environments;
     sharedConfig.testDeployments = [

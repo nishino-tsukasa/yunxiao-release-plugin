@@ -265,17 +265,19 @@ def execute_stage(stage: dict[str, Any], poll_interval: int, timeout: int, verbo
     return completed
 
 
-def execute_plan(plan: dict[str, Any], poll_interval: int, client_initial_wait: int, client_timeout: int, server_timeout: int, verbose: bool) -> dict[str, Any]:
-    """按阶段执行流水线计划，client 全部成功后再执行 server。"""
+def execute_plan(plan: dict[str, Any], poll_interval: int, stage_execution: dict[str, dict[str, int]], verbose: bool) -> dict[str, Any]:
+    """按阶段执行流水线计划；每个阶段使用规范化后的等待与超时设置。"""
     require_yunxiao_env()
     if plan["unresolved"]:
         raise RuntimeError("存在未配置映射，禁止执行真实流水线。请先补齐配置。")
     stage_results: list[dict[str, Any]] = []
     stages = plan["stages"]
     for stage_index, stage in enumerate(stages, start=1):
-        is_client_stage = stage["name"] == "client-package"
-        stage_timeout = client_timeout if is_client_stage else server_timeout
-        initial_wait_seconds = client_initial_wait if is_client_stage else 0
+        settings = stage_execution.get(stage["name"])
+        if not settings:
+            raise RuntimeError(f"缺少阶段执行配置：{stage['name']}")
+        stage_timeout = int(settings["timeoutSeconds"])
+        initial_wait_seconds = int(settings.get("initialWaitSeconds", 0))
         completed_steps = execute_stage(stage, poll_interval, stage_timeout, verbose, initial_wait_seconds,
                                         stage_index, len(stages))
         stage_results.append({
@@ -294,18 +296,18 @@ def print_final_summary(plan: dict[str, Any], execution_result: dict[str, Any] |
     projects = ",".join(plan["changedProjects"]) if plan["changedProjects"] else "none"
     unresolved_count = len(plan["unresolved"])
     if execution_result is None:
-        frontend_steps = next((len(stage["steps"]) for stage in plan["stages"] if stage["name"] == "frontend-deploy"), 0)
-        client_steps = next((len(stage["steps"]) for stage in plan["stages"] if stage["name"] == "client-package"), 0)
-        server_steps = next((len(stage["steps"]) for stage in plan["stages"] if stage["name"] == "server-deploy"), 0)
+        frontend_steps = next((len(stage["steps"]) for stage in plan["stages"] if stage["name"] == "frontend-client-deploy"), 0)
+        client_steps = next((len(stage["steps"]) for stage in plan["stages"] if stage["name"] == "backend-client-package"), 0)
+        server_steps = next((len(stage["steps"]) for stage in plan["stages"] if stage["name"] == "backend-server-deploy"), 0)
         print(
             f"RESULT status=planned projects={projects} unresolved={unresolved_count} "
             f"frontend_steps={frontend_steps} client_steps={client_steps} server_steps={server_steps}",
             flush=True,
         )
         return
-    frontend_stage = next((stage for stage in execution_result["stages"] if stage["name"] == "frontend-deploy"), {"steps": []})
-    client_stage = next((stage for stage in execution_result["stages"] if stage["name"] == "client-package"), {"steps": []})
-    server_stage = next((stage for stage in execution_result["stages"] if stage["name"] == "server-deploy"), {"steps": []})
+    frontend_stage = next((stage for stage in execution_result["stages"] if stage["name"] == "frontend-client-deploy"), {"steps": []})
+    client_stage = next((stage for stage in execution_result["stages"] if stage["name"] == "backend-client-package"), {"steps": []})
+    server_stage = next((stage for stage in execution_result["stages"] if stage["name"] == "backend-server-deploy"), {"steps": []})
     print(
         f"RESULT status=success projects={projects} unresolved={unresolved_count} "
         f"frontend_success={len(frontend_stage['steps'])} client_success={len(client_stage['steps'])} "
@@ -331,11 +333,15 @@ def main() -> None:
         execution_result: dict[str, Any] | None = None
         execution = plan.get("execution", {})
         poll_interval = args.poll_interval if args.poll_interval is not None else int(execution["pollIntervalSeconds"])
-        client_initial_wait = args.client_initial_wait if args.client_initial_wait is not None else int(execution["clientInitialWaitSeconds"])
-        client_timeout = args.client_timeout if args.client_timeout is not None else int(execution["clientTimeoutSeconds"])
-        server_timeout = args.server_timeout if args.server_timeout is not None else int(execution["serverTimeoutSeconds"])
+        stage_execution = {name: dict(settings) for name, settings in execution["stages"].items()}
+        if args.client_initial_wait is not None:
+            stage_execution["backend-client-package"]["initialWaitSeconds"] = args.client_initial_wait
+        if args.client_timeout is not None:
+            stage_execution["backend-client-package"]["timeoutSeconds"] = args.client_timeout
+        if args.server_timeout is not None:
+            stage_execution["backend-server-deploy"]["timeoutSeconds"] = args.server_timeout
         if args.run:
-            execution_result = execute_plan(plan, poll_interval, client_initial_wait, client_timeout, server_timeout, args.verbose)
+            execution_result = execute_plan(plan, poll_interval, stage_execution, args.verbose)
         print_final_summary(plan, execution_result)
     except Exception as error:
         print_failure_summary(projects, error)

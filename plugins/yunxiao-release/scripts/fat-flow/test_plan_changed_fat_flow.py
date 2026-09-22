@@ -35,8 +35,8 @@ class ExecuteEnvironmentReleasePlanTest(unittest.TestCase):
             "unresolved": [],
             "changedProjects": ["backend-service"],
             "stages": [
-                {"name": "client-package", "steps": [{"project": "backend-service"}]},
-                {"name": "server-deploy", "steps": [{"project": "backend-service"}]},
+                {"name": "backend-client-package", "steps": [{"project": "backend-service"}]},
+                {"name": "backend-server-deploy", "steps": [{"project": "backend-service"}]},
             ],
         }
         with patch.object(MODULE, "require_yunxiao_env"), patch.object(
@@ -44,10 +44,13 @@ class ExecuteEnvironmentReleasePlanTest(unittest.TestCase):
             "execute_stage",
             side_effect=[[{"project": "backend-service"}], [{"project": "backend-service"}]],
         ) as execute_stage:
-            MODULE.execute_plan(plan, 1, 0, 1, 1, False)
+            MODULE.execute_plan(plan, 1, {
+                "backend-client-package": {"initialWaitSeconds": 0, "timeoutSeconds": 1},
+                "backend-server-deploy": {"initialWaitSeconds": 0, "timeoutSeconds": 1},
+            }, False)
 
         self.assertEqual(
-            ["client-package", "server-deploy"],
+            ["backend-client-package", "backend-server-deploy"],
             [call.args[0]["name"] for call in execute_stage.call_args_list],
         )
         self.assertEqual(1, execute_stage.call_args_list[0].args[5])
@@ -57,7 +60,7 @@ class ExecuteEnvironmentReleasePlanTest(unittest.TestCase):
         plan = {"unresolved": ["missing pipeline"], "changedProjects": [], "stages": []}
         with patch.object(MODULE, "require_yunxiao_env"), patch.object(MODULE, "execute_stage") as execute_stage:
             with self.assertRaisesRegex(RuntimeError, "存在未配置映射"):
-                MODULE.execute_plan(plan, 1, 0, 1, 1, False)
+                MODULE.execute_plan(plan, 1, {}, False)
         execute_stage.assert_not_called()
 
 

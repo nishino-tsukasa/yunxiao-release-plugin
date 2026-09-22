@@ -83,12 +83,19 @@ assert.equal(readProjectConfig(root, env).targetBranch, 'release');
 assert.equal(readProjectConfig(root, env).versionFile, null);
 assert.equal(readProjectConfig(root, env).testDeployments[0].targetBranch, 'fat/fat');
 mkdirSync(resolve(root, '.agents'));
-writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"release"}\n');
+const projectConfig = {
+  organizationId: 'org-1', repositoryId: 'repo-1', remoteName: 'origin', targetBranch: 'release',
+  reviewerMode: 'fixed', reviewerUserIds: ['reviewer-1'], versionFile: null, announcementFile: null,
+  localConfigFile: '.agents/yunxiao-release.local.json', runtimeFile: '.agents/runtime/yunxiao-release-mr.json',
+  commentsFile: '.agents/runtime/yunxiao-release-comments.md', validationCommands: ['git diff --check'],
+  testDeployments: [{ environment: 'fat', targetBranch: 'fat/fat', hookUrl: 'https://example.com/hook' }],
+};
+writeFileSync(resolve(root, '.agents/yunxiao-release.json'), `${JSON.stringify(projectConfig)}\n`);
 assert.equal(readProjectConfig(root, env).targetBranch, 'release');
 assert.equal(readProjectConfig(root, env).repositoryId, 'repo-1');
-writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"master"}\n');
+writeFileSync(resolve(root, '.agents/yunxiao-release.json'), `${JSON.stringify({ ...projectConfig, targetBranch: 'master' })}\n`);
 assert.equal(readProjectConfig(root, env).targetBranch, 'master');
-writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"release"}\n');
+writeFileSync(resolve(root, '.agents/yunxiao-release.json'), `${JSON.stringify(projectConfig)}\n`);
 writeFileSync(resolveGlobalDefaultsPath(env), '{"schemaVersion":1,"repositoryId":"bad"}\n');
 assert.throws(() => readProjectConfig(root, env), /不能包含仓库差异字段: repositoryId/);
 rmSync(root, { recursive: true, force: true });

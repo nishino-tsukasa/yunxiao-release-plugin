@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { assertGlobalDefaultScope, readGlobalConfigFiles, readGlobalProjectConfig } from './global-config.mjs';
-import { pipelineStages } from './release-step-schema.mjs';
+import { normalizePipelineStage, pipelineStages } from './release-step-schema.mjs';
 
 const projectConfigPath = '.agents/yunxiao-release.json';
 const legacyProjectConfigPath = '.codex/yunxiao-release.json';
@@ -36,7 +36,7 @@ const readProjectConfigFile = (rootDir) => {
   const legacy = resolve(rootDir, legacyProjectConfigPath);
   if (existsSync(current) && existsSync(legacy)) fail('新旧项目共享配置同时存在，请确认保留哪一份');
   const source = existsSync(current) ? current : legacy;
-  return existsSync(source) ? readJson(source) : {};
+  return existsSync(source) ? { exists: true, config: readJson(source) } : { exists: false, config: {} };
 };
 
 const renderEnvs = (template, context) => Object.fromEntries(Object.entries(template ?? {}).map(([key, value]) => [
@@ -120,8 +120,8 @@ const adaptFatEnvironment = (project, repository, fatFlow) => {
         project, branch, environment: pipeline.env ?? section.defaultEnv ?? 'fat',
         environmentName: pipeline.envName ?? section.defaultEnvName ?? '', feishuId: pipeline.feishuId ?? section.defaultFeishuId ?? '',
       };
-      steps.push(pipelineStep(pipeline, 'frontend-deploy', context));
-    } else issues.push({ stage: 'frontend-deploy', message: `项目 ${project} 未配置 frontend 部署流水线映射` });
+      steps.push(pipelineStep(pipeline, 'frontend-client-deploy', context));
+    } else issues.push({ stage: 'frontend-client-deploy', message: `项目 ${project} 未配置 frontend 部署流水线映射` });
   } else {
     const client = fatFlow.clientPackage ?? {};
     const when = clientWhen(repository.clientDetection);
@@ -132,14 +132,14 @@ const adaptFatEnvironment = (project, repository, fatFlow) => {
           project, branch, environment: client.defaultEnv ?? 'fat', environmentName: '',
           feishuId: client.defaultFeishuId ?? '',
         };
-        const alternatives = pipelines.map((pipeline) => pipelineStep(pipeline, 'client-package', {
+        const alternatives = pipelines.map((pipeline) => pipelineStep(pipeline, 'backend-client-package', {
           ...context, feishuId: pipeline.feishuId ?? context.feishuId,
         }, when));
         steps.push(alternatives.length === 1 ? alternatives[0] : {
-          type: 'pipeline', stage: 'client-package', alternatives,
+          type: 'pipeline', stage: 'backend-client-package', alternatives,
           ...(when ? { when } : {}),
         });
-      } else issues.push({ stage: 'client-package', message: `项目 ${project} 未配置 client 打包流水线映射` });
+      } else issues.push({ stage: 'backend-client-package', message: `项目 ${project} 未配置 client 打包流水线映射` });
     }
     const server = fatFlow.serverDeploy ?? {};
     const pipeline = (server.skipProjects ?? []).includes(project) ? null : server.projects?.[project];
@@ -148,9 +148,9 @@ const adaptFatEnvironment = (project, repository, fatFlow) => {
         project, branch, environment: pipeline.env ?? server.defaultEnv ?? 'fat',
         environmentName: '', feishuId: pipeline.feishuId ?? '',
       };
-      steps.push(pipelineStep(pipeline, 'server-deploy', context));
+      steps.push(pipelineStep(pipeline, 'backend-server-deploy', context));
     } else if (!(server.skipProjects ?? []).includes(project)) {
-      issues.push({ stage: 'server-deploy', message: `项目 ${project} 未配置 server 部署流水线映射` });
+      issues.push({ stage: 'backend-server-deploy', message: `项目 ${project} 未配置 server 部署流水线映射` });
     }
   }
   return { branch, steps, issues };
@@ -170,13 +170,18 @@ const normalizeStep = (step, label) => {
     return { type: 'manual-link', webUrl: normalizeHttpUrl(step.webUrl, `${label}.webUrl`) };
   }
   if (step.type === 'pipeline') {
-    if (typeof step.stage !== 'string' || !pipelineStages.includes(step.stage)) fail(`${label}.stage 不支持: ${step.stage ?? ''}`);
-    if (step.when !== undefined && (!isObject(step.when) || !Array.isArray(step.when.changedPaths))) {
+    const stage = normalizePipelineStage(step.stage);
+    if (typeof stage !== 'string' || !pipelineStages.includes(stage)) fail(`${label}.stage 不支持: ${step.stage ?? ''}`);
+    if (step.when !== undefined && (
+      !isObject(step.when)
+      || !Array.isArray(step.when.changedPaths)
+      || Object.keys(step.when).some((key) => key !== 'changedPaths')
+    )) {
       fail(`${label}.when 仅支持 changedPaths 数组`);
     }
     const common = {
       type: 'pipeline',
-      stage: step.stage.trim(),
+      stage,
       ...(step.when ? { when: { changedPaths: step.when.changedPaths.map(String) } } : {}),
     };
     if (step.candidates !== undefined) {
@@ -185,32 +190,84 @@ const normalizeStep = (step, label) => {
         ...common,
         alternatives: step.candidates.map((candidate, index) => {
           if (!isObject(candidate)) fail(`${label}.candidates[${index}] 必须是对象`);
+          if (typeof candidate.pipelineName !== 'string' || !candidate.pipelineName.trim()) {
+            fail(`${label}.candidates[${index}].pipelineName 必须是非空字符串`);
+          }
+          if (candidate.pipelineId === undefined || !String(candidate.pipelineId).trim()) {
+            fail(`${label}.candidates[${index}].pipelineId 必须是非空字符串`);
+          }
           return {
             ...common,
-            pipelineName: candidate.pipelineName,
-            pipelineId: String(candidate.pipelineId ?? ''),
+            pipelineName: candidate.pipelineName.trim(),
+            pipelineId: String(candidate.pipelineId).trim(),
             params: isObject(candidate.params) ? candidate.params : { envs: {} },
           };
         }),
       };
     }
+    if (typeof step.pipelineName !== 'string' || !step.pipelineName.trim()) {
+      fail(`${label}.pipelineName 必须是非空字符串`);
+    }
+    if (step.pipelineId === undefined || !String(step.pipelineId).trim()) {
+      fail(`${label}.pipelineId 必须是非空字符串`);
+    }
     return {
       ...common,
-      pipelineName: step.pipelineName,
-      pipelineId: String(step.pipelineId ?? ''),
+      pipelineName: step.pipelineName.trim(),
+      pipelineId: String(step.pipelineId).trim(),
       params: isObject(step.params) ? step.params : { envs: {} },
     };
   }
   fail(`${label}.type 不支持: ${step.type}`);
 };
 
-const normalizeExecution = (value, required) => {
-  if (!required && value === undefined) return {};
+const normalizeStageExecution = (value, stage) => {
+  if (!isObject(value)) fail(`releaseExecution.stages.${stage} 必须是对象`);
+  const timeoutSeconds = value.timeoutSeconds;
+  const initialWaitSeconds = value.initialWaitSeconds ?? 0;
+  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 0) {
+    fail(`releaseExecution.stages.${stage}.timeoutSeconds 必须是非负整数`);
+  }
+  if (!Number.isInteger(initialWaitSeconds) || initialWaitSeconds < 0) {
+    fail(`releaseExecution.stages.${stage}.initialWaitSeconds 必须是非负整数`);
+  }
+  return { initialWaitSeconds, timeoutSeconds };
+};
+
+const adaptLegacyExecution = (value) => ({
+  pollIntervalSeconds: value.pollIntervalSeconds,
+  stages: {
+    'frontend-client-deploy': { initialWaitSeconds: 0, timeoutSeconds: value.serverTimeoutSeconds },
+    'backend-client-package': {
+      initialWaitSeconds: value.clientInitialWaitSeconds,
+      timeoutSeconds: value.clientTimeoutSeconds,
+    },
+    'backend-server-deploy': { initialWaitSeconds: 0, timeoutSeconds: value.serverTimeoutSeconds },
+  },
+});
+
+const normalizeExecution = (value, requiredStages) => {
+  if (requiredStages.length === 0 && value === undefined) return {};
   if (!isObject(value)) fail('releaseExecution 必须是对象');
-  const fields = ['pollIntervalSeconds', 'clientInitialWaitSeconds', 'clientTimeoutSeconds', 'serverTimeoutSeconds'];
-  const missing = fields.filter((field) => !Number.isInteger(value[field]) || value[field] < 0);
-  if (missing.length) fail(`releaseExecution 缺少非负整数: ${missing.join(', ')}`);
-  return Object.fromEntries(fields.map((field) => [field, value[field]]));
+  const canonical = value.stages === undefined ? adaptLegacyExecution(value) : value;
+  if (!Number.isInteger(canonical.pollIntervalSeconds) || canonical.pollIntervalSeconds < 0) {
+    fail('releaseExecution.pollIntervalSeconds 必须是非负整数');
+  }
+  if (!isObject(canonical.stages)) fail('releaseExecution.stages 必须是对象');
+  const missing = requiredStages.filter((stage) => !isObject(canonical.stages[stage]));
+  if (missing.length) fail(`releaseExecution.stages 缺少阶段: ${missing.join(', ')}`);
+  const normalizedStages = {};
+  for (const [stage, execution] of Object.entries(canonical.stages)) {
+    const normalizedStage = normalizePipelineStage(stage);
+    if (!pipelineStages.includes(normalizedStage)) fail(`releaseExecution.stages 不支持阶段: ${stage}`);
+    if (Object.hasOwn(normalizedStages, normalizedStage)) fail(`releaseExecution.stages 阶段重复: ${normalizedStage}`);
+    normalizedStages[normalizedStage] = normalizeStageExecution(execution, normalizedStage);
+  }
+  return {
+    pollIntervalSeconds: canonical.pollIntervalSeconds,
+    stages: Object.fromEntries(pipelineStages.filter((stage) => Object.hasOwn(normalizedStages, stage))
+      .map((stage) => [stage, normalizedStages[stage]])),
+  };
 };
 
 const normalizeEnvironments = (value) => {
@@ -219,15 +276,27 @@ const normalizeEnvironments = (value) => {
     if (!isObject(environment) || !Array.isArray(environment.steps)) fail(`environments.${name} 配置无效`);
     const branch = environment.branch ?? null;
     if (branch !== null && (typeof branch !== 'string' || !branch.trim())) fail(`environments.${name}.branch 无效`);
+    const steps = environment.steps.map((step, index) => normalizeStep(step, `environments.${name}.steps[${index}]`));
+    if (steps.some(({ type }) => type === 'pipeline') && steps.some(({ type }) => type === 'webhook')) {
+      fail(`environments.${name} 不能同时配置 pipeline 和 webhook`);
+    }
     return [name, {
       branch: typeof branch === 'string' ? branch.trim() : null,
-      steps: environment.steps.map((step, index) => normalizeStep(step, `environments.${name}.steps[${index}]`)),
+      steps,
     }];
   }));
 };
 
-const buildProfile = ({ project, repositoryKey, defaults, repositoryConfig, projectConfig = {} }) => {
-  const raw = { ...defaults, ...withoutMissingValues(repositoryConfig), ...withoutMissingValues(projectConfig) };
+const assertExclusiveTriggers = (environments) => {
+  for (const [name, environment] of Object.entries(environments)) {
+    if (environment.steps.some(({ type }) => type === 'pipeline') && environment.steps.some(({ type }) => type === 'webhook')) {
+      fail(`environments.${name} 不能同时配置 pipeline 和 webhook`);
+    }
+  }
+};
+
+const buildProfile = ({ project, repositoryKey, defaults, repositoryConfig }) => {
+  const raw = { ...defaults, ...withoutMissingValues(repositoryConfig) };
   const required = [
     'organizationId', 'repositoryId', 'remoteName', 'targetBranch', 'reviewerMode', 'reviewerUserIds',
     'versionFile', 'announcementFile', 'localConfigFile', 'runtimeFile', 'commentsFile', 'validationCommands',
@@ -246,8 +315,14 @@ const buildProfile = ({ project, repositoryKey, defaults, repositoryConfig, proj
       environments.fat.issues = fat.issues;
     }
   }
-  const hasPipelineSteps = Object.values(environments).some((environment) => environment.steps.some((step) => step.type === 'pipeline'));
-  const execution = normalizeExecution(defaults.releaseExecution ?? defaults.fatFlow?.execution, hasPipelineSteps);
+  if (!hasCanonicalEnvironments && environments.fat?.steps.some(({ type }) => type === 'pipeline')) {
+    environments.fat.steps = environments.fat.steps.filter(({ type }) => type !== 'webhook');
+  }
+  assertExclusiveTriggers(environments);
+  const requiredStages = [...new Set(Object.values(environments).flatMap((environment) => environment.steps
+    .filter((step) => step.type === 'pipeline')
+    .map((step) => step.stage)))];
+  const execution = normalizeExecution(raw.releaseExecution ?? defaults.fatFlow?.execution, requiredStages);
   return {
     schemaVersion: 1,
     project,
@@ -276,20 +351,22 @@ const buildProfile = ({ project, repositoryKey, defaults, repositoryConfig, proj
 };
 
 export const resolveReleaseConfiguration = (rootDir, env = process.env) => {
-  const projectConfig = readProjectConfigFile(rootDir);
+  const projectSource = readProjectConfigFile(rootDir);
+  const projectConfig = projectSource.config;
   const initial = readGlobalProjectConfig(rootDir, env, projectConfig.remoteName || '');
   const remoteName = projectConfig.remoteName || initial.remoteName;
   const global = remoteName && remoteName !== initial.remoteName
     ? readGlobalProjectConfig(rootDir, env, remoteName)
     : initial;
-  const repositoryConfig = global.repositoryKey ? global.repositories[global.repositoryKey] ?? {} : {};
+  const repositoryConfig = projectSource.exists
+    ? projectConfig
+    : (global.repositoryKey ? global.repositories[global.repositoryKey] ?? {} : {});
   const project = (global.repositoryKey ?? rootDir).split('/').at(-1);
   return buildProfile({
     project,
     repositoryKey: global.repositoryKey,
     defaults: global.defaults,
     repositoryConfig,
-    projectConfig,
   });
 };
 
