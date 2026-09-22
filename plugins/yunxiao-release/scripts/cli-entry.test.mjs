@@ -85,11 +85,17 @@ const run = () => {
     env: { ...process.env, HOME: rootDir, XDG_CONFIG_HOME: xdgConfigHome },
   });
   assert.equal(globalResult.status, 0, globalResult.stderr);
-  assert.deepEqual(JSON.parse(readFileSync(resolve(xdgConfigHome, 'yunxiao-release/projects.json'))), {
-    schemaVersion: 1,
-    defaults: {},
-    repositories: {},
+  assert.deepEqual(JSON.parse(readFileSync(resolve(xdgConfigHome, 'yunxiao-release/global-defaults.json'))), { schemaVersion: 1 });
+  assert.deepEqual(JSON.parse(readFileSync(resolve(xdgConfigHome, 'yunxiao-release/global-repositories.json'))), {
+    schemaVersion: 1, repositories: {},
   });
+  const globalApplyResult = spawnSync('node', [publicCli, 'global', 'apply'], {
+    input: JSON.stringify({ defaults: { organizationId: 'org-1' }, repositories: {} }),
+    encoding: 'utf8',
+    env: { ...process.env, HOME: rootDir, XDG_CONFIG_HOME: xdgConfigHome },
+  });
+  assert.equal(globalApplyResult.status, 0, globalApplyResult.stderr);
+  assert.deepEqual(JSON.parse(globalApplyResult.stdout), { defaultFieldCount: 1, repositoryCount: 0 });
   const fatHelpResult = spawnSync('node', [publicCli, 'fat-flow', '--help'], { encoding: 'utf8' });
   assert.equal(fatHelpResult.status, 0, fatHelpResult.stderr);
   assert.match(fatHelpResult.stdout, /run-full-fat-flow-deploy/);

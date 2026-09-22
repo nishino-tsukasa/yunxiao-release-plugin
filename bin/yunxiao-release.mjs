@@ -11,7 +11,7 @@ const printHelp = () => {
   console.log(`Usage:
   yunxiao-release                 交互安装
   yunxiao-release configure       初始化或更新项目配置
-  yunxiao-release global [--init|--check] 初始化或检查全局项目配置
+  yunxiao-release global [--init|--check|apply] 初始化、检查或写入全局项目配置
   yunxiao-release token [--check] 配置或检查全局 Token
   yunxiao-release fat-flow <args> 执行前后端 FAT Git Flow 与部署`);
 };

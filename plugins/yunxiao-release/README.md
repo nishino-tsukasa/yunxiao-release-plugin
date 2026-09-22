@@ -51,17 +51,28 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 
 配置按字段使用以下优先级：项目 `.agents/yunxiao-release.json` > 全局仓库配置 > 全局默认配置 > 插件内置默认值。项目配置可以只保留需要覆盖的字段。
 
-全局配置位于 `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/projects.json`：
+全局配置拆分为：
+
+- `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/global-defaults.json`
+- `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/global-repositories.json`
+
+全局默认配置示例：
 
 ```json
 {
   "schemaVersion": 1,
-  "defaults": {
-    "organizationId": "组织 ID",
-    "targetBranch": "master",
-    "reviewerMode": "ask",
-    "reviewerUserIds": []
-  },
+  "organizationId": "组织 ID",
+  "targetBranch": "master",
+  "reviewerMode": "ask",
+  "reviewerUserIds": []
+}
+```
+
+全局仓库配置示例：
+
+```json
+{
+  "schemaVersion": 1,
   "repositories": {
     "codeup.aliyun.com/supermonkey/monkey-core": {
       "repositoryId": "代码库 ID",
@@ -71,7 +82,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 }
 ```
 
-仓库键由 Git remote 标准化得到。`repositoryId` 只能放在项目配置或具体仓库项中，不能放入 `defaults`。
+仓库键由 Git remote 标准化得到。`repositoryId` 只能放在项目配置或具体仓库项中，不能放入全局默认配置。配置 Skill 可读取任意当前会话可访问的格式，规范化并经 MCP 核实后，只展示摘要并写入这两个文件。
 
 共享配置位于 `.agents/yunxiao-release.json`：
 
