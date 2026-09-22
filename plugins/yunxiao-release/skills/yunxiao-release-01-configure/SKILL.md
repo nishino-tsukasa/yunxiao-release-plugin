@@ -14,7 +14,7 @@ description: 初始化、更新或检查任意 Git 项目的云效发版配置�
 3. 全局文件缺失、不完整，或用户要求导入配置时，先询问是否配置全局信息。用户可提供任意当前会话可读取的文件、目录、JSON、YAML、Markdown 表格或普通文本；读取后规范化为 `defaults` 和 `repositories`，不得要求用户转换格式。未同意配置时继续检查当前项目，并把全局缺失列入最终结果。
 4. 确认当前会话真实存在云效官方 MCP 工具，并读取其 Schema。
 5. 缺少 `organizationId` 时调用 `get_current_organization_info` 和 `get_user_organizations`；缺少 `repositoryId` 时从标准化 remote 提取仓库路径，用 `list_repositories` 准备候选并用 `get_repository` 精确核实。不得从 remote 猜 ID。
-   后端项目和前端 SaaS 项目的 MR `targetBranch` 固定为 `release`；FAT 目标分支只写入对应 `testDeployments[].targetBranch`，不得用 `develop` 或 `fat/fat` 覆盖顶层 MR 目标分支。
+   后端项目，以及前端 SaaS、CMS、Starlink 和 `enterprise-external-privilege-web` 的 MR `targetBranch` 固定为 `release`；对应仓库项写入 `projectGroup`。FAT 目标分支只写入对应 `testDeployments[].targetBranch`，不得用 `develop` 或 `fat/fat` 覆盖顶层 MR 目标分支。
 6. 检查项目成员配置和用户级 `${XDG_CONFIG_HOME:-$HOME/.config}/yunxiao-release/member.json`；项目配置存在时优先使用。旧 Codex `.env` 成员字段仅作为迁移期兼容读取。
 7. 初始化或更新配置时，只展示一次表单，集中收集配置范围（全局默认、全局仓库、当前项目）、组织、仓库、remote、目标分支、评审人、发版文件、验证命令、环境发布，以及 `用户名称（真实名字）：`、`用户 ID：`、`飞书 ID（可选）：`。不得拆成逐项确认；发布环境及 URL 不得猜测。
 8. 表单返回后统一校验所有字段。缺失或无法唯一匹配时一次性列出全部问题并停止；`feishuId` 留空时不写入，不要求输入 `tokenSource`。

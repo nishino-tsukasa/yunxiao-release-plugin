@@ -46,7 +46,7 @@ configure_marketplace() {
   codex plugin marketplace add "$REPOSITORY" --ref main
 }
 
-# 检测 Codex Home 中已有的云效 Token；仅在缺失时通过终端隐藏输入。
+# 检测固定全局路径中的云效 Token；仅在缺失时通过终端隐藏输入。
 configure_token() {
   local token_script="$1"
   local check_output

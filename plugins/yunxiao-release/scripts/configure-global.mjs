@@ -27,8 +27,9 @@ const writeJsonAtomic = (filePath, value) => {
 export const initializeGlobalConfig = (env = process.env) => {
   const defaultsPath = resolveGlobalDefaultsPath(env);
   const repositoriesPath = resolveGlobalRepositoriesPath(env);
-  if (!existsSync(defaultsPath)) writeJsonAtomic(defaultsPath, { schemaVersion: 1 });
-  if (!existsSync(repositoriesPath)) writeJsonAtomic(repositoriesPath, { schemaVersion: 1, repositories: {} });
+  const current = readGlobalConfigFiles(env);
+  if (!existsSync(defaultsPath)) writeJsonAtomic(defaultsPath, { schemaVersion: 1, ...current.defaults });
+  if (!existsSync(repositoriesPath)) writeJsonAtomic(repositoriesPath, { schemaVersion: 1, repositories: current.repositories });
   return { defaultsPath, repositoriesPath };
 };
 
@@ -46,6 +47,13 @@ export const applyGlobalConfig = (payload, env = process.env) => {
     : Object.fromEntries(keys.map((key) => [key, { ...(current.repositories[key] ?? {}), ...(incomingRepositories[key] ?? {}) }]));
   Object.entries(repositories).forEach(([key, value]) => {
     if (!key || !isObject(value)) throw new Error(`仓库配置无效: ${key || '<empty>'}`);
+    const effective = { ...defaults, ...value };
+    const releaseFrontendGroups = new Set(['saas', 'cms', 'starlink', 'enterprise']);
+    const requiresRelease = value.projectType === 'backend'
+      || (value.projectType === 'frontend' && releaseFrontendGroups.has(value.projectGroup));
+    if (requiresRelease && effective.targetBranch !== 'release') {
+      throw new Error(`仓库 ${key} 的 MR targetBranch 必须是 release`);
+    }
   });
   writeJsonAtomic(resolveGlobalDefaultsPath(env), { schemaVersion: 1, ...defaults });
   writeJsonAtomic(resolveGlobalRepositoriesPath(env), { schemaVersion: 1, repositories });

@@ -11,8 +11,8 @@ description: 按项目配置将当前分支发布到 develop、uat 等测试环�
 
 1. 仅在用户明确要求执行发布时继续；询问发布方式、查看配置或排查问题不触发发布。先确认用户要发布测试环境还是正式环境；不得仅凭“发版”“上线”“发布”等词猜测环境。
 2. 用户意图是正式环境时，先执行 `yunxiao-release-05-finalize` 的全部要求，按配置更新版本号和发版公告并完成合并前准备。每次根据当前 Git、MR 和远端状态重新校验；已满足时不重复修改或提交。合并前准备未完成时停止，不返回生产发布入口。
-3. 正式环境的合并前准备完成后读取 `.agents/yunxiao-release.json` 的 `testDeployments`。该字段缺失或为空数组时，到此结束并说明未配置生产发布入口；不执行环境发布脚本，也不要求补充配置。
-4. 测试环境请求直接读取 `testDeployments`。用户明确环境时按 `environment` 精确匹配；未明确且无法唯一匹配时展示候选并只让用户选择一个，禁止猜测。正式环境请求也必须匹配唯一的手动发布配置，不能根据环境名称猜测。
+3. 正式环境的合并前准备完成后，通过本插件 `scripts/release-state.mjs check <repo-root>` 读取按“项目配置 > 全局仓库配置 > 全局默认配置 > 插件默认值”合并后的有效 `testDeployments`；后端迁移完成后项目配置文件可以不存在。该字段缺失或为空数组时，到此结束并说明未配置生产发布入口；不执行环境发布脚本，也不要求补充配置。
+4. 测试环境请求同样读取合并后的有效 `testDeployments`。用户明确环境时按 `environment` 精确匹配；未明确且无法唯一匹配时展示候选并只让用户选择一个，禁止猜测。正式环境请求也必须匹配唯一的手动发布配置，不能根据环境名称猜测。
 5. 使用本 Skill 所属插件根目录的脚本执行预检：`node scripts/deploy-environment.mjs --dry-run <repo-root> <environment>`。禁止查找或执行目标仓库中的同名脚本。
 6. 预检返回 `mode=manual` 时，只输出 `[打开 <environment> 发布页面](<webUrl>)`。不调用 webhook，不自动打开浏览器，不要求副作用确认。
 7. 预检返回 `mode=automatic` 时，输出 source、remote release、测试目标分支、push 和 webhook 后直接执行 `node scripts/deploy-environment.mjs <repo-root> <environment>`，不再要求确认。脚本负责拉取远端分支、将 release 合入当前分支、通过临时 worktree 更新测试分支、非强制推送、验证远端提交、触发 webhook 和清理 worktree。

@@ -6,6 +6,8 @@ TARGET_MESSAGE=""
 TARGET_COMMIT=""
 TARGET_REPO=""
 TARGET_KIND=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/project-kind.sh"
 
 # 统一展示脚本用法，避免调用参数错误时难以排查。
 usage() {
@@ -79,7 +81,7 @@ parse_args() {
   fi
 }
 
-# 根据项目名选择提交规范；约定以 -web 结尾的项目使用前端规范，其余项目使用后端规范。
+# 根据项目名选择提交规范；约定名称包含 -web 的项目使用前端规范，其余项目使用后端规范。
 resolve_target_kind() {
   if [[ -n "$TARGET_KIND" ]]; then
     return
@@ -88,7 +90,7 @@ resolve_target_kind() {
     TARGET_KIND="backend"
     return
   fi
-  if [[ "$(basename "$TARGET_REPO")" == *-web ]]; then
+  if is_frontend_repo "$TARGET_REPO"; then
     TARGET_KIND="frontend"
   else
     TARGET_KIND="backend"

@@ -26,6 +26,29 @@ assert.deepEqual(applyGlobalConfig({
 assert.equal(JSON.parse(readFileSync(resolveGlobalDefaultsPath(emptyEnv))).organizationId, 'org-2');
 assert.equal(JSON.parse(readFileSync(resolveGlobalRepositoriesPath(emptyEnv))).repositories['codeup.aliyun.com/group/repo'].repositoryId, '2');
 assert.throws(() => applyGlobalConfig({ defaults: { repositoryId: 'bad' } }, emptyEnv), /不能包含 repositoryId/);
+assert.throws(() => applyGlobalConfig({ repositories: {
+  'codeup.aliyun.com/group/backend': { projectType: 'backend', targetBranch: 'fat/fat' },
+} }, emptyEnv), /targetBranch 必须是 release/);
+assert.throws(() => applyGlobalConfig({ repositories: {
+  'codeup.aliyun.com/group/saas': { projectType: 'frontend', projectGroup: 'saas', targetBranch: 'master' },
+} }, emptyEnv), /targetBranch 必须是 release/);
+const inheritedRoot = mkdtempSync(resolve(tmpdir(), 'yunxiao-global-inherited-'));
+const inheritedEnv = { HOME: inheritedRoot, XDG_CONFIG_HOME: resolve(inheritedRoot, 'config') };
+assert.doesNotThrow(() => applyGlobalConfig({
+  defaults: { targetBranch: 'release' },
+  repositories: { 'codeup.aliyun.com/group/backend': { projectType: 'backend', repositoryId: '3' } },
+}, inheritedEnv));
+
+const legacyRoot = mkdtempSync(resolve(tmpdir(), 'yunxiao-global-legacy-'));
+const legacyEnv = { HOME: legacyRoot, XDG_CONFIG_HOME: resolve(legacyRoot, 'config') };
+mkdirSync(resolve(legacyEnv.XDG_CONFIG_HOME, 'yunxiao-release'), { recursive: true });
+writeFileSync(resolve(legacyEnv.XDG_CONFIG_HOME, 'yunxiao-release/projects.json'), `${JSON.stringify({
+  defaults: { organizationId: 'legacy-org' },
+  repositories: { 'codeup.aliyun.com/group/legacy': { repositoryId: 'legacy-repo' } },
+})}\n`);
+initializeGlobalConfig(legacyEnv);
+assert.equal(JSON.parse(readFileSync(resolveGlobalDefaultsPath(legacyEnv))).organizationId, 'legacy-org');
+assert.equal(JSON.parse(readFileSync(resolveGlobalRepositoriesPath(legacyEnv))).repositories['codeup.aliyun.com/group/legacy'].repositoryId, 'legacy-repo');
 writeFileSync(resolveGlobalDefaultsPath(env), `${JSON.stringify({
   schemaVersion: 1, organizationId: 'org-1', targetBranch: 'master', reviewerMode: 'ask',
 })}\n`);
@@ -59,6 +82,9 @@ mkdirSync(resolve(root, '.agents'));
 writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"release"}\n');
 assert.equal(readProjectConfig(root, env).targetBranch, 'release');
 assert.equal(readProjectConfig(root, env).repositoryId, 'repo-1');
+writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"master"}\n');
+assert.throws(() => readProjectConfig(root, env), /targetBranch 必须是 release/);
+writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"release"}\n');
 assert.equal(finalizeProjectMigration({ rootDir: root, projectType: 'frontend' }, env), 'retained');
 assert.equal(existsSync(resolve(root, '.agents/yunxiao-release.json')), true);
 assert.equal(finalizeProjectMigration({ rootDir: root, projectType: 'backend' }, env), 'deleted');
@@ -68,4 +94,6 @@ writeFileSync(resolveGlobalDefaultsPath(env), '{"schemaVersion":1,"repositoryId"
 assert.throws(() => readProjectConfig(root, env), /不能包含 repositoryId/);
 rmSync(root, { recursive: true, force: true });
 rmSync(emptyRoot, { recursive: true, force: true });
+rmSync(legacyRoot, { recursive: true, force: true });
+rmSync(inheritedRoot, { recursive: true, force: true });
 console.log('global-config self-test passed');

@@ -13,6 +13,7 @@ SCRIPT_VERBOSE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_FAT_FLOW_SCRIPT="${SCRIPT_DIR}/run-fat-flow.sh"
 PLAN_DEPLOY_SCRIPT="${SCRIPT_DIR}/plan-changed-fat-flow.sh"
+source "${SCRIPT_DIR}/project-kind.sh"
 
 # 展示脚本用法，避免固定流程入口传参不完整时难以排查。
 usage() {
@@ -203,7 +204,7 @@ repo_has_standard_client_server_layout() {
 # 依据项目名选择 FAT 发版目标分支；名称包含 -web 的前端项目合并到 develop，其他项目合并到 fat/fat。
 resolve_target_branch_for_repo() {
   local repo="$1"
-  if [[ "$(basename "$repo")" == *-web* ]]; then
+  if is_frontend_repo "$repo"; then
     printf 'develop\n'
   else
     printf 'fat/fat\n'
@@ -231,7 +232,7 @@ repo_needs_client_package() {
   local repo="$1"
   local diff_base_ref
   local changed_files
-  if [[ "$(basename "$repo")" == *-web* ]]; then
+  if is_frontend_repo "$repo"; then
     return 1
   fi
   if ! repo_has_standard_client_server_layout "$repo"; then

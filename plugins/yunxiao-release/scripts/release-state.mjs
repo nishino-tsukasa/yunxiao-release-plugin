@@ -126,6 +126,14 @@ export const readProjectConfig = (rootDir, env = process.env) => {
   ensureKeys(rawConfig, requiredConfigKeys, '合并后的项目配置');
   const { reviewMode: _reviewMode, ...currentConfig } = rawConfig;
   const config = { ...configDefaults, ...currentConfig };
+  const releaseFrontendGroups = new Set(['saas', 'cms', 'starlink', 'enterprise']);
+  const policyProjectType = globalConfig.projectType || projectConfig.projectType;
+  const policyProjectGroup = globalConfig.projectGroup || projectConfig.projectGroup;
+  const requiresRelease = policyProjectType === 'backend'
+    || (policyProjectType === 'frontend' && releaseFrontendGroups.has(policyProjectGroup));
+  if (requiresRelease && config.targetBranch !== 'release') {
+    fail('当前项目的 MR targetBranch 必须是 release');
+  }
   if (!Array.isArray(config.validationCommands) || config.validationCommands.length === 0) {
     fail('validationCommands 必须是非空数组');
   }

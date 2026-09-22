@@ -11,6 +11,7 @@ SCRIPT_TARGET_BRANCH=""
 SCRIPT_VERBOSE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VALIDATE_SCRIPT="${SCRIPT_DIR}/validate-commit-message.sh"
+source "${SCRIPT_DIR}/project-kind.sh"
 
 # 展示脚本用法，避免调用方传参错误时无从排查。
 usage() {
@@ -135,7 +136,7 @@ ensure_repo_exists() {
 # 依据仓库名识别项目类型；名称包含 -web 的项目走前端发版分支。
 resolve_project_flow() {
   SCRIPT_STEP="resolve_project_flow"
-  if [[ "$(basename "$SCRIPT_REPO")" == *-web* ]]; then
+  if is_frontend_repo "$SCRIPT_REPO"; then
     SCRIPT_PROJECT_KIND="frontend"
     SCRIPT_TARGET_BRANCH="develop"
   else
@@ -203,15 +204,13 @@ sync_source_branch() {
   if git -C "$SCRIPT_REPO" ls-remote --exit-code --heads origin "$SCRIPT_BRANCH" >/dev/null 2>&1; then
     run_git pull --no-rebase origin "$SCRIPT_BRANCH" || fail "拉取同名源分支失败"
   else
-    log_info "远程不存在同名源分支，准备初始化 upstream"
-    SCRIPT_STEP="init_source_branch_upstream"
-    run_git push -u origin "$SCRIPT_BRANCH" || fail "初始化同名源分支失败"
+    log_info "远程不存在同名源分支，将在提交信息校验通过后初始化 upstream"
   fi
 
   validate_source_branch_commits
 
   SCRIPT_STEP="push_source_branch"
-  run_git push origin "$SCRIPT_BRANCH" || fail "推送源分支失败"
+  run_git push -u origin "$SCRIPT_BRANCH" || fail "推送源分支失败"
 }
 
 # 确保本地存在目标发版分支；如果不存在，则从远端目标分支建立跟踪分支。

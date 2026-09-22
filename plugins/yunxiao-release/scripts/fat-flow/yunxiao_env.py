@@ -74,11 +74,11 @@ def resolve_organization_id() -> str:
 
 def resolve_access_token() -> str:
     """读取云效个人访问令牌，并在缺失时给出明确错误。"""
-    token = read_exported_env("YUNXIAO_ACCESS_TOKEN") or read_global_token()
+    token = read_global_token() or read_exported_env("YUNXIAO_ACCESS_TOKEN")
     if token:
         return token
     raise RuntimeError(
-        "缺少已导出的 YUNXIAO_ACCESS_TOKEN。请在 shell 中 export 后重试；"
+        "缺少全局凭据或已导出的 YUNXIAO_ACCESS_TOKEN。请先运行配置 Skill；"
         "token 获取路径：云效 / Codeup -> 个人设置 -> 个人访问令牌。"
     )
 

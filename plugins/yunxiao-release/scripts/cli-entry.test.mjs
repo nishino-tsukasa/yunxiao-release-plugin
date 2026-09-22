@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,7 +53,7 @@ const run = () => {
     env: { ...process.env, HOME: rootDir, CODEX_HOME: codexHome, XDG_CONFIG_HOME: xdgConfigHome },
   });
   assert.equal(tokenResult.status, 0, tokenResult.stderr);
-  assert.equal(readFileSync(resolve(codexHome, '.env'), 'utf8'), 'YUNXIAO_ACCESS_TOKEN=test-token\n');
+  assert.equal(existsSync(resolve(codexHome, '.env')), false);
   assert.equal(readFileSync(resolve(xdgConfigHome, 'yunxiao-release/credentials.env'), 'utf8'), 'YUNXIAO_ACCESS_TOKEN=test-token\n');
   const existingTokenResult = spawnSync('node', [resolve(aliasDir, 'configure-token.mjs'), '--check'], {
     encoding: 'utf8',
@@ -67,7 +67,7 @@ const run = () => {
     env: { ...process.env, CODEX_HOME: codexHome, XDG_CONFIG_HOME: xdgConfigHome },
   });
   assert.equal(memberResult.status, 0, memberResult.stderr);
-  assert.equal(readFileSync(resolve(codexHome, '.env'), 'utf8'), 'YUNXIAO_ACCESS_TOKEN=test-token\n');
+  assert.equal(existsSync(resolve(codexHome, '.env')), false);
   assert.deepEqual(JSON.parse(readFileSync(resolve(xdgConfigHome, 'yunxiao-release/member.json'))), {
     displayName: '测试成员',
     userId: 'user-1',

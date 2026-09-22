@@ -216,8 +216,8 @@ if [[ "$token_output" == *'first-secret-token'* ]]; then
   echo 'Token 输入不应回显到终端' >&2
   exit 1
 fi
-if [[ "$(<"$CODEX_HOME/.env")" != 'YUNXIAO_ACCESS_TOKEN=first-secret-token' ]]; then
-  echo '首次输入的 Token 没有正确写入 Codex Home' >&2
+if [[ -e "$CODEX_HOME/.env" ]]; then
+  echo '首次输入的 Token 不应写入账号相关 Codex Home' >&2
   exit 1
 fi
 if [[ "$(<"$XDG_CONFIG_HOME/yunxiao-release/credentials.env")" != 'YUNXIAO_ACCESS_TOKEN=first-secret-token' ]]; then

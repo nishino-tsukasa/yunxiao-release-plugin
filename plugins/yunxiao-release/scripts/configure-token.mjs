@@ -57,7 +57,7 @@ const readToken = async () => {
   });
 };
 
-// 原子更新 Codex Home .env，避免 Token 写到一半时破坏现有环境。
+// 原子更新凭据文件，避免 Token 写到一半时破坏现有环境。
 export const writeEnvFile = (filePath, updateContent) => {
   const current = existsSync(filePath) ? readFileSync(filePath, 'utf8') : '';
   mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
@@ -100,13 +100,11 @@ const main = async () => {
   const envPath = migrateLegacyToken();
   if (process.argv.includes('--check')) {
     const configured = existsSync(envPath) && hasConfiguredToken(readFileSync(envPath, 'utf8'));
-    if (configured) syncCodexToken();
     console.log(configured ? `${tokenKey} 已配置：${envPath}` : `${tokenKey} 未配置：${envPath}`);
     process.exitCode = configured ? 0 : 1;
     return;
   }
   writeToken(envPath, await readToken());
-  syncCodexToken();
   console.log(`${tokenKey} 已安全写入 ${envPath}`);
 };
 

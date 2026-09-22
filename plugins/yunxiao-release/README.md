@@ -25,7 +25,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin
 
 建议使用用户级安装：同一宿主的多个项目可共享插件，每个项目仍通过 `.agents/yunxiao-release.json` 保存独立配置。一键安装默认使用用户级作用域。
 
-选择 Codex 时，安装脚本会复用或交互式读取 `YUNXIAO_ACCESS_TOKEN`，以 `~/.config/yunxiao-release/credentials.env` 为固定来源，并同步到当前 Codex Home 供 MCP 启动时读取。旧 `${CODEX_HOME:-$HOME/.codex}/.env` Token 会自动迁移。
+选择 Codex 时，安装脚本会复用或交互式读取 `YUNXIAO_ACCESS_TOKEN`，以 `~/.config/yunxiao-release/credentials.env` 为固定来源。插件 MCP 启动代理直接读取该路径，不依赖当前 Orca/Codex 账号的 `CODEX_HOME`；旧 `${CODEX_HOME:-$HOME/.codex}/.env` Token 仅在首次配置时自动迁移。
 
 选择 Claude Code 时，插件安装到用户级作用域。启动 Claude Code 后，先运行 `/plugin configure yunxiao-release@yunxiao-release-community` 配置 Token。
 
@@ -75,8 +75,12 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
   "schemaVersion": 1,
   "repositories": {
     "codeup.aliyun.com/supermonkey/monkey-core": {
+      "projectType": "backend",
       "repositoryId": "代码库 ID",
-      "targetBranch": "fat/fat"
+      "targetBranch": "release",
+      "testDeployments": [
+        { "environment": "fat", "targetBranch": "fat/fat", "hookUrl": "https://example.com/webhook" }
+      ]
     }
   }
 }
@@ -86,7 +90,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 
 迁移完成后，配置 Skill 会重新核对有效配置：前端项目保留项目内配置作为显式覆盖，后端项目仅在全部字段已被集中配置覆盖时删除项目内共享配置。
 
-分支约定：后端项目和前端 SaaS 项目的 MR 目标分支为 `release`；`develop`、`fat/fat` 等测试发布分支仅配置在 `testDeployments` 中。
+分支约定：后端项目，以及前端 SaaS、CMS、Starlink 和 `enterprise-external-privilege-web`（仓库项分别标记 `projectGroup`）的 MR 目标分支强制为 `release`；`develop`、`fat/fat` 等测试发布分支仅配置在 `testDeployments` 中。
 
 共享配置位于 `.agents/yunxiao-release.json`：
 
@@ -180,7 +184,7 @@ Codex 更新 Token：
 npx github:FlyAboveGrass/yunxiao-release-plugin token
 ```
 
-检查当前 Codex Home 是否已配置 Token：
+检查固定全局路径是否已配置 Token：
 
 ```bash
 npx github:FlyAboveGrass/yunxiao-release-plugin token --check

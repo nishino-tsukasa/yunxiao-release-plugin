@@ -50,6 +50,8 @@
 | `validationCommands` | `["git diff --check"]` | 项目规则和 CI 的最低验证命令，必须是非空数组；执行前完整展示并纳入对应流程的一次总确认 |
 | `testDeployments` | `[]` | 项目环境发布配置；自动测试发布或生产环境人工发布入口 |
 
+后端项目，以及 `projectGroup` 为 `saas`、`cms`、`starlink` 或 `enterprise` 的前端项目必须使用 `targetBranch=release`。测试环境分支只能写入 `testDeployments[].targetBranch`。
+
 ## 环境发布
 
 `testDeployments` 中的 `environment` 必填且唯一，配置支持两种模式：
