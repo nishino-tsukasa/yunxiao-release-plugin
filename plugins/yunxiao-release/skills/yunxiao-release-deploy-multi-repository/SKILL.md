@@ -1,11 +1,11 @@
 ---
-name: yunxiao-release-fat-flow
-description: 按全局仓库配置对一个或多个仓库执行 FAT Git Flow 和云效流水线部署。用户要求完整 FAT 发版、多项目发版或从业务分支继续发布时使用。
+name: yunxiao-release-deploy-multi-repository
+description: 编排两个及以上已配置 Git 仓库的 FAT 环境发布，按配置顺序推进分支、触发并等待前后端流水线。用户要求跨仓库、前后端联动或多项目 FAT 发版时使用；单仓库发布使用 yunxiao-release-deploy-environment。
 ---
 
-# FAT Git Flow 与部署
+# 多仓库 FAT 环境发布
 
-1. 确认用户指定的仓库和源分支；只处理明确范围。
+1. 确认用户指定的至少两个仓库和源分支；只处理明确范围。仅有一个仓库时改用 `yunxiao-release-deploy-environment`。
 2. 检查每个仓库是 Git 仓库且工作区干净。相关改动先按项目规则提交；混有无关改动时停止。
 3. 对每个仓库读取 Release Configuration module 统一后的 `repository.remoteName`、`environments.<环境>`、可选 `git.commitMessagePattern` 和显式步骤条件；必要字段缺失时停止，不从仓库名称、目录名称或项目类型推断。
 4. 展示仓库、源分支、目标分支及部署项目，获得远端写入和流水线触发的一次确认。

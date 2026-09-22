@@ -1,6 +1,6 @@
 ---
 name: yunxiao-release-deploy-environment
-description: 按项目配置将当前分支发布到指定测试环境，或在完成 MR 合并前准备后返回生产环境人工发布入口。用户要求发版、上线、发布测试环境、推送测试分支、触发构建 webhook、发布线上或打开生产发布页面时使用。
+description: 将当前单个 Git 仓库发布到指定测试环境，或在完成 MR 合并前准备后返回生产环境人工发布入口。用户要求发布当前仓库、发布单个项目、推送测试分支、触发构建、发布线上或打开生产发布页面时使用；两个及以上仓库使用 yunxiao-release-deploy-multi-repository。
 ---
 
 # 云效环境发布

@@ -1,4 +1,4 @@
 interface:
-  display_name: "云效环境发布"
-  short_description: "按项目配置发布一个测试环境，或返回生产环境人工发布入口"
-  default_prompt: "使用 $yunxiao-release-deploy-environment 将当前项目发布到指定测试环境，或返回生产环境人工发布入口。"
+  display_name: "云效单仓库环境发布"
+  short_description: "发布当前单个仓库，或返回其生产环境人工发布入口"
+  default_prompt: "使用 $yunxiao-release-deploy-environment 将当前单个 Git 仓库发布到指定环境。"

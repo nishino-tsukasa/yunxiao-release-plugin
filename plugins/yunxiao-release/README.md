@@ -251,8 +251,8 @@ npx github:FlyAboveGrass/yunxiao-release-plugin token --check
 | 03 | 同步评论 | `$yunxiao-release:yunxiao-release-03-sync-comments` | `/yunxiao-release:yunxiao-release-03-sync-comments` | 完整同步当前 MR 的全局评论、行内评论和回复。 |
 | 04 | 处理评论 | `$yunxiao-release:yunxiao-release-04-fix-review-comments` | `/yunxiao-release:yunxiao-release-04-fix-review-comments` | 分析并处理当前 MR 的未解决评论。 |
 | 05 | 云效 MR 合并前准备 | `$yunxiao-release:yunxiao-release-05-finalize` | `/yunxiao-release:yunxiao-release-05-finalize` | 按配置更新版本号、发版资料，验证并在必要时推送到同一 MR，等待人工合并。 |
-| — | 环境发布 | `$yunxiao-release:yunxiao-release-deploy-environment` | `/yunxiao-release:yunxiao-release-deploy-environment` | 发布一个测试环境，或返回生产环境人工发布入口。 |
-| — | FAT Git Flow | `$yunxiao-release:yunxiao-release-fat-flow` | `/yunxiao-release:yunxiao-release-fat-flow` | 多仓库前后端分支合入及 FAT 流水线部署。 |
+| — | 单仓库环境发布 | `$yunxiao-release:yunxiao-release-deploy-environment` | `/yunxiao-release:yunxiao-release-deploy-environment` | 发布当前单个仓库到指定环境，或返回其生产环境人工发布入口。 |
+| — | 多仓库 FAT 发布 | `$yunxiao-release:yunxiao-release-deploy-multi-repository` | `/yunxiao-release:yunxiao-release-deploy-multi-repository` | 编排两个及以上仓库的分支推进及前后端 FAT 流水线。 |
 
 创建 MR 时若远端目标分支尚未合入当前分支，插件会自动普通合入并非强制推送源分支，不再额外确认；工作区不干净、合并冲突或推送校验失败时停止。
 

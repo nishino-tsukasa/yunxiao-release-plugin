@@ -14,7 +14,7 @@ const printHelp = () => {
   yunxiao-release global [--init|--check|apply] 初始化、检查或写入全局项目配置
   yunxiao-release migrate-global <args> 迁移并核实拆分全局配置
   yunxiao-release token [--check] 配置或检查全局 Token
-  yunxiao-release fat-flow <args> 执行前后端 FAT Git Flow 与部署`);
+  yunxiao-release fat-flow <args> 执行多仓库 FAT 环境发布`);
 };
 
 const run = (command, args) => {

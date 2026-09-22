@@ -21,7 +21,7 @@ readonly EXPECTED_SKILLS=(
   yunxiao-release-04-fix-review-comments
   yunxiao-release-05-finalize
   yunxiao-release-deploy-environment
-  yunxiao-release-fat-flow
+  yunxiao-release-deploy-multi-repository
 )
 actual_skill_count="$(find "$ROOT_DIR/plugins/yunxiao-release/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
 if [[ "$actual_skill_count" -ne "${#EXPECTED_SKILLS[@]}" ]]; then

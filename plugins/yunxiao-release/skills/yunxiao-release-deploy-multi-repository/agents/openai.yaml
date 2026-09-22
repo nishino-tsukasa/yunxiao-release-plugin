@@ -1,0 +1,4 @@
+interface:
+  display_name: "云效多仓库 FAT 发布"
+  short_description: "编排两个及以上仓库的分支推进和前后端 FAT 流水线"
+  default_prompt: "使用 $yunxiao-release-deploy-multi-repository 对本次涉及的多个 Git 仓库执行 FAT 环境发布。"
