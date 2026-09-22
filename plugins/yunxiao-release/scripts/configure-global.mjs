@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-import { readGlobalConfigFiles, resolveGlobalDefaultsPath, resolveGlobalRepositoriesPath } from './global-config.mjs';
-import { readProjectConfig } from './release-state.mjs';
+import {
+  assertGlobalDefaultScope,
+  readGlobalConfigFiles,
+  resolveGlobalDefaultsPath,
+  resolveLegacyGlobalConfigPath,
+  resolveGlobalRepositoriesPath,
+} from './global-config.mjs';
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -28,9 +33,16 @@ export const initializeGlobalConfig = (env = process.env) => {
   const defaultsPath = resolveGlobalDefaultsPath(env);
   const repositoriesPath = resolveGlobalRepositoriesPath(env);
   const current = readGlobalConfigFiles(env);
+  if (current.source === 'legacy') {
+    try {
+      assertGlobalDefaultScope(current.defaults);
+    } catch {
+      return { source: 'legacy', legacyPath: resolveLegacyGlobalConfigPath(env) };
+    }
+  }
   if (!existsSync(defaultsPath)) writeJsonAtomic(defaultsPath, { schemaVersion: 1, ...current.defaults });
   if (!existsSync(repositoriesPath)) writeJsonAtomic(repositoriesPath, { schemaVersion: 1, repositories: current.repositories });
-  return { defaultsPath, repositoriesPath };
+  return { source: 'split', defaultsPath, repositoriesPath };
 };
 
 export const applyGlobalConfig = (payload, env = process.env) => {
@@ -38,9 +50,10 @@ export const applyGlobalConfig = (payload, env = process.env) => {
   const incomingDefaults = payload.defaults ?? {};
   const incomingRepositories = payload.repositories ?? {};
   if (!isObject(incomingDefaults) || !isObject(incomingRepositories)) throw new Error('defaults 和 repositories 必须是对象');
-  if (Object.hasOwn(incomingDefaults, 'repositoryId')) throw new Error('全局默认配置不能包含 repositoryId');
+  assertGlobalDefaultScope(incomingDefaults);
   const current = readGlobalConfigFiles(env);
   const defaults = payload.mode === 'replace' ? incomingDefaults : { ...current.defaults, ...incomingDefaults };
+  assertGlobalDefaultScope(defaults);
   const keys = [...new Set([...Object.keys(current.repositories), ...Object.keys(incomingRepositories)])];
   const repositories = payload.mode === 'replace'
     ? incomingRepositories
@@ -50,47 +63,7 @@ export const applyGlobalConfig = (payload, env = process.env) => {
   });
   writeJsonAtomic(resolveGlobalDefaultsPath(env), { schemaVersion: 1, ...defaults });
   writeJsonAtomic(resolveGlobalRepositoriesPath(env), { schemaVersion: 1, repositories });
-  const projectConfigAction = payload.projectMigration
-    ? finalizeProjectMigration(payload.projectMigration, env)
-    : 'not-requested';
-  return { defaultFieldCount: Object.keys(defaults).length, repositoryCount: Object.keys(repositories).length, projectConfigAction };
-};
-
-export const finalizeProjectMigration = (migration, env = process.env) => {
-  if (!isObject(migration)) throw new Error('projectMigration 必须是对象');
-  const rootDir = realpathSync(resolve(String(migration.rootDir || '')));
-  const projectConfigPath = resolve(rootDir, '.agents/yunxiao-release.json');
-  if (!existsSync(projectConfigPath)) return 'absent';
-  const raw = JSON.parse(readFileSync(projectConfigPath, 'utf8'));
-  const temporaryPath = `${projectConfigPath}.${randomUUID()}.migration`;
-  renameSync(projectConfigPath, temporaryPath);
-  let effective;
-  try {
-    effective = readProjectConfig(rootDir, env);
-  } catch (error) {
-    renameSync(temporaryPath, projectConfigPath);
-    throw error;
-  }
-  const ignored = new Set(['reviewMode', 'tokenSource']);
-  const mismatches = Object.entries(raw)
-    .filter(([key]) => !ignored.has(key))
-    .filter(([key, value]) => JSON.stringify(effective[key]) !== JSON.stringify(value))
-    .map(([key]) => key);
-  if (mismatches.length) {
-    renameSync(temporaryPath, projectConfigPath);
-    throw new Error(`集中配置未完整覆盖项目字段: ${mismatches.join(', ')}`);
-  }
-  const migrationAction = effective.projectConfigMigration;
-  if (!['retain', 'delete'].includes(migrationAction)) {
-    renameSync(temporaryPath, projectConfigPath);
-    throw new Error('集中配置必须显式设置 projectConfigMigration=retain|delete');
-  }
-  if (migrationAction === 'retain') {
-    renameSync(temporaryPath, projectConfigPath);
-    return 'retained';
-  }
-  unlinkSync(temporaryPath);
-  return 'deleted';
+  return { defaultFieldCount: Object.keys(defaults).length, repositoryCount: Object.keys(repositories).length };
 };
 
 const readStdinJson = async () => {
@@ -110,7 +83,8 @@ const main = async () => {
   }
   if (command === '--init') {
     const paths = initializeGlobalConfig();
-    console.log(`全局配置已就绪：${paths.defaultsPath}, ${paths.repositoriesPath}`);
+    if (paths.source === 'legacy') console.log(`继续兼容旧全局配置：${paths.legacyPath}`);
+    else console.log(`全局配置已就绪：${paths.defaultsPath}, ${paths.repositoriesPath}`);
     return;
   }
   if (command === 'apply') {

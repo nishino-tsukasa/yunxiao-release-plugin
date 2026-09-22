@@ -49,7 +49,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 
 ## 项目配置
 
-配置按字段使用以下优先级：项目 `.agents/yunxiao-release.json` > 全局仓库配置 > 全局默认配置。插件不内置组织、仓库或发布策略默认值；全局仓库项支持项目配置的全部字段，因此项目文件可以不存在，也可以只保留特殊覆盖字段。
+配置按字段使用以下优先级：项目 `.agents/yunxiao-release.json` > 全局仓库配置 > 全局默认配置。全局默认只允许组织级、存储路径和执行参数等真正可跨仓库复用的字段；仓库 ID、分支、评审人、验证命令和环境发布步骤必须放在全局仓库配置或项目配置中。插件不内置组织、仓库或发布策略默认值；全局仓库项支持项目配置的全部字段，因此项目文件可以不存在，也可以只保留特殊覆盖字段。
 
 全局配置拆分为：
 
@@ -62,9 +62,15 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 {
   "schemaVersion": 1,
   "organizationId": "组织 ID",
-  "targetBranch": "stable",
-  "reviewerMode": "ask",
-  "reviewerUserIds": []
+  "localConfigFile": ".agents/yunxiao-release.local.json",
+  "runtimeFile": ".agents/runtime/yunxiao-release-mr.json",
+  "commentsFile": ".agents/runtime/yunxiao-release-comments.md",
+  "releaseExecution": {
+    "pollIntervalSeconds": 10,
+    "clientInitialWaitSeconds": 60,
+    "clientTimeoutSeconds": 600,
+    "serverTimeoutSeconds": 1800
+  }
 }
 ```
 
@@ -75,26 +81,31 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
   "schemaVersion": 1,
   "repositories": {
     "codeup.aliyun.com/example/service": {
-      "projectType": "service",
       "repositoryId": "代码库 ID",
+      "remoteName": "origin",
       "targetBranch": "stable",
-      "fatTargetBranch": "testing",
-      "projectConfigMigration": "delete",
-      "commitMessagePattern": "配置的正则表达式",
-      "clientDetection": { "mode": "never" },
-      "testDeployments": [
-        { "environment": "testing", "targetBranch": "testing", "hookUrl": "https://example.com/webhook" }
-      ]
+      "reviewerMode": "ask",
+      "reviewerUserIds": [],
+      "versionFile": null,
+      "announcementFile": null,
+      "validationCommands": ["git diff --check"],
+      "environments": {
+        "testing": {
+          "branch": "testing",
+          "steps": [
+            { "type": "promote-branch" },
+            { "type": "webhook", "hookUrl": "https://example.com/webhook" }
+          ]
+        }
+      }
     }
   }
 }
 ```
 
-仓库键由 Git remote 标准化得到。每个仓库项可配置 `repositoryId`、MR 目标分支、评审人、版本与公告文件、内部状态路径、验证命令和全部环境发布配置；`repositoryId` 不能放入全局默认配置。配置 Skill 可读取任意当前会话可访问的格式，规范化并经 MCP 核实后，只展示摘要并写入这两个文件。
+仓库键由 Git remote 标准化得到。每个仓库项可配置 `repositoryId`、MR 目标分支、评审人、版本与公告文件、内部状态路径、验证命令和全部环境发布配置；这些仓库差异字段不能放入全局默认配置。配置 Skill 可读取任意当前会话可访问的格式，规范化并经 MCP 核实后，只展示摘要并写入这两个文件。
 
-迁移完成后，配置 Skill 会重新核对有效配置：前端项目保留项目内配置作为显式覆盖，后端项目仅在全部字段已被集中配置覆盖时删除项目内共享配置。
-
-项目类型、MR/FAT 分支、迁移动作、提交规则和 Client 检测均是仓库数据。插件只校验字段和执行配置，不按项目名称、分组或类型附加组织策略。
+MR/环境分支、提交规则、流水线和 Client 触发条件均是仓库数据。插件只校验字段并执行显式步骤，不按项目名称、分组或类型附加组织策略。
 
 共享配置位于 `.agents/yunxiao-release.json`：
 
@@ -112,18 +123,21 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
   "runtimeFile": ".agents/runtime/yunxiao-release-mr.json",
   "commentsFile": ".agents/runtime/yunxiao-release-comments.md",
   "validationCommands": ["git diff --check"],
-  "testDeployments": [
-    {
-      "environment": "fat",
-      "targetBranch": "testing",
-      "hookUrl": "https://example.com/webhook",
-      "webUrl": "https://example.com/pipeline"
+  "environments": {
+    "fat": {
+      "branch": "testing",
+      "steps": [
+        { "type": "promote-branch" },
+        { "type": "webhook", "hookUrl": "https://example.com/webhook", "webUrl": "https://example.com/pipeline" }
+      ]
     },
-    {
-      "environment": "production",
-      "webUrl": "https://example.com/production-pipeline"
+    "production": {
+      "branch": null,
+      "steps": [
+        { "type": "manual-link", "webUrl": "https://example.com/production-pipeline" }
+      ]
     }
-  ]
+  }
 }
 ```
 
@@ -141,7 +155,8 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 | `runtimeFile` | `.agents/runtime/yunxiao-release-mr.json` | 当前分支和 MR 的运行状态，必须是项目内相对路径并被 Git 忽略。 |
 | `commentsFile` | `.agents/runtime/yunxiao-release-comments.md` | MR 评论处理记录，必须是项目内相对路径并被 Git 忽略。 |
 | `validationCommands` | 配置必填 | 创建 MR 和合并前准备阶段执行的最低验证命令。根据项目规则、CI 和现有脚本配置，必须是非空数组；全部命令会纳入对应流程的一次总确认。 |
-| `testDeployments` | `[]` | 环境发布配置。`targetBranch + hookUrl` 表示自动测试发布；仅 `environment + webUrl` 表示生产环境人工发布入口。 |
+| `environments` | `{}` | 统一环境发布配置。每个环境显式声明目标分支和有序步骤；支持 `promote-branch`、`pipeline`、`webhook`、`manual-link`。`pipeline.stage` 只允许 `frontend-deploy`、`client-package`、`server-deploy`；可用 `candidates` 声明等价流水线并由 Planner 均衡选择。 |
+| `testDeployments` | `[]` | 已发布旧格式，继续兼容；读取时转换为 `environments`，新配置不再使用。 |
 
 ## 成员身份与 Token
 
@@ -154,7 +169,9 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 
 ## 前后端 FAT 发版
 
-`yunxiao-release fat-flow` 按全局配置执行多个仓库的 Git Flow、可选 Client 打包与部署流水线。组织流水线目录存放在 `global-defaults.json` 的 `fatFlow`，仓库分支和检测规则存放在 `global-repositories.json`；插件包不携带真实项目名、分支或流水线 ID。
+`yunxiao-release fat-flow` 和单仓库环境发布共用同一套 `environments` 配置与 Environment Release Planner。`pipeline` 步骤通过 `stage` 表示 `frontend-deploy`、`client-package` 或 `server-deploy`，通过可选 `when.changedPaths` 表示 Client 触发条件；插件不再维护独立的前后端识别规则。旧 `projects.json` 中的 `fatFlow` 及仓库 `projectType`、`fatTargetBranch`、`clientDetection` 仅作为向后兼容输入，由 Release Configuration module 转换为同一计划；新的拆分全局配置禁止这些旧字段。插件包不携带真实项目名、分支或流水线 ID。
+
+当前执行边界：`deploy-environment` 执行 `promote-branch + webhook` 或返回 `manual-link`；含 `pipeline` 的 FAT 计划由 `yunxiao-release fat-flow` 执行。两者共用统一配置与规划结果，不会静默跳过不支持的步骤。
 
 推荐使用配置 Skill 生成，内容如下：
 
@@ -214,7 +231,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin token --check
 
 明确要求发布 FAT、UAT 等自动测试环境时，预检通过后直接完成发布，不再重复确认；未明确环境且存在多个候选时才询问环境选择。
 
-明确要求发布正式环境时，插件先核验并补齐 05 合并前准备，再返回人工发布入口。`testDeployments` 未配置或为空数组时，只完成合并前准备，不返回生产发布地址。
+明确要求发布正式环境时，插件先核验并补齐 05 合并前准备，再返回 `manual-link` 人工发布入口。对应 `environments` 项未配置时，只完成合并前准备，不返回生产发布地址。
 
 ## 常见问题
 

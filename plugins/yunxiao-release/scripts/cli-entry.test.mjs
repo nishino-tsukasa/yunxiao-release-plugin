@@ -96,7 +96,7 @@ const run = () => {
   });
   assert.equal(globalApplyResult.status, 0, globalApplyResult.stderr);
   assert.deepEqual(JSON.parse(globalApplyResult.stdout), {
-    defaultFieldCount: 1, repositoryCount: 0, projectConfigAction: 'not-requested',
+    defaultFieldCount: 1, repositoryCount: 0,
   });
   const fatHelpResult = spawnSync('node', [publicCli, 'fat-flow', '--help'], { encoding: 'utf8' });
   assert.equal(fatHelpResult.status, 0, fatHelpResult.stderr);

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 -u "${SCRIPT_DIR}/plan_changed_fat_flow.py" "$@"
+node "${SCRIPT_DIR}/plan_environment_release.mjs" "$@"

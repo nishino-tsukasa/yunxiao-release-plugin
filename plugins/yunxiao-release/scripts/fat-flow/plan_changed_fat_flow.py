@@ -1,39 +1,25 @@
 #!/usr/bin/env python3
-"""根据本地改动项目生成 FAT client 打包与 server 部署流水线计划。"""
+"""执行 Environment Release Planner 生成的云效流水线计划。"""
 
 from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from yunxiao_env import require_yunxiao_runtime, resolve_organization_id
+from yunxiao_env import require_yunxiao_runtime
 from yunxiao_env import run_devops
-from fat_flow_config import load_config, project_config
-
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_OUTPUT = SCRIPT_DIR / "output" / "changed-fat-flow-plan.json"
 
 
 def parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
-    parser = argparse.ArgumentParser(description="生成或执行 FAT client 打包与 server 部署流水线计划。")
-    parser.add_argument("--defaults-config", help="全局默认配置文件；默认读取 XDG 配置目录。")
-    parser.add_argument("--repositories-config", help="全局仓库配置文件；默认读取 XDG 配置目录。")
-    parser.add_argument("--projects-root", default=str(Path.cwd()), help="包含多个项目仓库的根目录。")
-    parser.add_argument("--base-ref", help="扫描本地改动时使用的显式基准 ref。")
-    parser.add_argument("--projects", help="显式指定项目，逗号分隔；指定后不扫描本地 git 改动。")
-    parser.add_argument("--client-projects", help="显式指定需要打 client 包的项目，逗号分隔；留空表示本次部署无需打任何 client 包。")
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="计划输出文件。")
-    parser.add_argument("--run", action="store_true", help="实际触发云效流水线；默认只生成计划。")
-    parser.add_argument("--skip-server", action="store_true", help="只打 client 包，不生成 server 部署步骤。")
+    parser = argparse.ArgumentParser(description="执行统一 Environment Release Planner 生成的流水线计划。")
+    parser.add_argument("--plan-input", required=True, help="Environment Release Planner 生成的计划文件。")
+    parser.add_argument("--run", action="store_true", help="实际触发云效流水线；未指定时只校验并摘要计划。")
     parser.add_argument("--poll-interval", type=int, help="覆盖配置中的流水线状态轮询间隔。")
     parser.add_argument("--client-initial-wait", type=int, help="覆盖配置中的 client 首次查询等待时间。")
     parser.add_argument("--client-timeout", type=int, help="覆盖配置中的 client 超时时间。")
@@ -53,11 +39,6 @@ def log_progress(message: str) -> None:
     print(f"PROGRESS {message}", flush=True)
 
 
-def run_cmd(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    """执行本地命令并返回结果，不直接抛出异常。"""
-    return subprocess.run(args, cwd=str(cwd) if cwd else None, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-
-
 def parse_devops_output(raw_output: str) -> Any:
     """解析云效 CLI 输出，兼容 JSON、裸数字和普通字符串。"""
     content = raw_output.strip()
@@ -69,203 +50,6 @@ def parse_devops_output(raw_output: str) -> Any:
         if content.isdigit():
             return int(content)
         return {"raw": content}
-
-
-def list_git_projects(root: Path) -> list[Path]:
-    """扫描根目录下一层 Git 项目。"""
-    return sorted(path for path in root.iterdir() if path.is_dir() and (path / ".git").exists())
-
-
-def ref_exists(repo: Path, ref: str) -> bool:
-    """判断仓库中指定 ref 是否存在。"""
-    proc = run_cmd(["git", "rev-parse", "--verify", "--quiet", ref], cwd=repo)
-    return proc.returncode == 0
-
-
-def has_status_changes(repo: Path) -> bool:
-    """判断仓库工作区或暂存区是否有改动。"""
-    proc = run_cmd(["git", "status", "--short"], cwd=repo)
-    return bool(proc.stdout.strip())
-
-
-def has_diff_from_ref(repo: Path, base_ref: str) -> bool:
-    """判断当前 HEAD 相对基准 ref 是否存在文件差异。"""
-    if not ref_exists(repo, base_ref):
-        return False
-    proc = run_cmd(["git", "diff", "--quiet", f"{base_ref}...HEAD"], cwd=repo)
-    return proc.returncode == 1
-
-
-def detect_changed_projects(root: Path, base_ref: str) -> list[str]:
-    """根据本地 Git 状态和基准分支差异识别有改动的项目。"""
-    changed: list[str] = []
-    for repo in list_git_projects(root):
-        if has_status_changes(repo) or has_diff_from_ref(repo, base_ref):
-            changed.append(repo.name)
-    return changed
-
-
-def render_value(value: str, project: str, branch: str, env: str, env_name: str, feishu_id: str) -> str:
-    """渲染流水线变量模板。"""
-    return value.format(project=project, branch=branch, env=env, envName=env_name, feishuId=feishu_id)
-
-
-def render_envs(template: dict[str, str], project: str, branch: str, env: str, env_name: str, feishu_id: str) -> dict[str, str]:
-    """根据项目上下文生成 Flow envs 参数。"""
-    return {key: render_value(str(value), project, branch, env, env_name, feishu_id) for key, value in template.items()}
-
-
-def uses_frontend_deploy(project: str, config: dict[str, Any]) -> bool:
-    """读取仓库显式配置，判断应使用哪类部署阶段。"""
-    return project_config(project, config).get("projectType") == "frontend"
-
-
-def resolve_target_branch(project: str, config: dict[str, Any]) -> str:
-    """选择项目在 FAT 流程中实际部署的目标分支。"""
-    target = project_config(project, config).get("fatTargetBranch")
-    if not isinstance(target, str) or not target:
-        raise ValueError(f"仓库缺少 fatTargetBranch：{project}")
-    return target
-
-
-def available_client_pipelines(project: str, config: dict[str, Any]) -> list[dict[str, Any]]:
-    """获取单个项目可使用的 client 打包流水线列表。"""
-    client_config = config.get("clientPackage", {})
-    if project in client_config.get("skipProjects", []):
-        return []
-    pipelines: list[dict[str, Any]] = []
-    framework = client_config.get("frameworkPipeline", {})
-    if project in framework.get("projects", []):
-        pipelines.append(framework)
-    for pipeline in client_config.get("javaServicePipelines", []):
-        if project in pipeline.get("projects", []):
-            pipelines.append(pipeline)
-    return pipelines
-
-
-def build_client_step(project: str, pipeline: dict[str, Any], config: dict[str, Any], branch: str) -> tuple[dict[str, Any] | None, str | None]:
-    """按指定流水线为单个项目生成 client 打包步骤。"""
-    client_config = config.get("clientPackage", {})
-    env = str(client_config["defaultEnv"])
-    feishu_id = str(client_config.get("defaultFeishuId") or "")
-    step = build_flow_step(project, branch, env, env, feishu_id, pipeline, "client-package")
-    return step, None if step["readyToRun"] else f"项目 {project} 的 client 打包流水线 {step['pipelineName']} 未配置 pipelineId"
-
-
-def build_server_step(project: str, config: dict[str, Any], branch: str) -> tuple[dict[str, Any] | None, str | None]:
-    """为单个项目生成 server 部署步骤。"""
-    server_config = config.get("serverDeploy", {})
-    if project in server_config.get("skipProjects", []):
-        return None, None
-    project_config = server_config.get("projects", {}).get(project)
-    if not project_config:
-        return None, f"项目 {project} 未配置 server 部署流水线映射"
-    env = str(project_config.get("env") or server_config["defaultEnv"])
-    feishu_id = str(project_config.get("feishuId") or "")
-    step = build_flow_step(project, branch, env, env, feishu_id, project_config, "server-deploy")
-    return step, None if step["readyToRun"] else f"项目 {project} 的 server 部署流水线 {step['pipelineName']} 未配置 pipelineId"
-
-
-def build_frontend_step(project: str, config: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-    """按仓库配置生成前置部署步骤。"""
-    frontend_config = config.get("frontendDeploy", {})
-    project_config = frontend_config.get("projects", {}).get(project)
-    if not project_config:
-        return None, f"项目 {project} 未配置 frontend FAT 部署流水线映射"
-    branch = resolve_target_branch(project, config)
-    env = str(project_config.get("env") or frontend_config["defaultEnv"])
-    env_name = str(project_config.get("envName") or frontend_config["defaultEnvName"])
-    feishu_id = str(project_config.get("feishuId") or frontend_config.get("defaultFeishuId") or "")
-    step = build_flow_step(project, branch, env, env_name, feishu_id, project_config, "frontend-deploy")
-    return step, None if step["readyToRun"] else f"项目 {project} 的 frontend 部署流水线 {step['pipelineName']} 未配置 pipelineId"
-
-
-def build_flow_step(project: str, branch: str, env: str, env_name: str, feishu_id: str, pipeline: dict[str, Any], step_type: str) -> dict[str, Any]:
-    """生成单个云效 Flow 运行步骤。"""
-    pipeline_id = str(pipeline.get("pipelineId") or "")
-    envs = render_envs(pipeline.get("envs", {}), project, branch, env, env_name, feishu_id)
-    return {
-        "type": step_type,
-        "project": project,
-        "pipelineName": pipeline.get("name"),
-        "pipelineId": pipeline_id,
-        "params": {
-            "envs": envs
-        },
-        "readyToRun": bool(pipeline_id),
-    }
-
-
-def should_package_client(project: str, explicit_client_projects: set[str] | None) -> bool:
-    """判断当前项目本次计划中是否需要打 client 包。"""
-    if explicit_client_projects is None:
-        return True
-    return project in explicit_client_projects
-
-
-def build_plan(projects: list[str], config: dict[str, Any], skip_server: bool, explicit_client_projects: set[str] | None = None) -> dict[str, Any]:
-    """生成 FAT 流水线执行计划。"""
-    branches = {project: resolve_target_branch(project, config) for project in projects}
-    unique_branches = sorted(set(branches.values()))
-    branch = unique_branches[0] if len(unique_branches) == 1 else "mixed"
-    frontend_steps: list[dict[str, Any]] = []
-    client_steps: list[dict[str, Any]] = []
-    server_steps: list[dict[str, Any]] = []
-    unresolved: list[str] = []
-    client_pipeline_load: dict[str, int] = {}
-    for project in projects:
-        if uses_frontend_deploy(project, config):
-            if not skip_server:
-                frontend_step, frontend_error = build_frontend_step(project, config)
-                if frontend_step:
-                    frontend_steps.append(frontend_step)
-                if frontend_error:
-                    unresolved.append(frontend_error)
-            continue
-        client_config = config.get("clientPackage", {})
-        if should_package_client(project, explicit_client_projects) and project not in client_config.get("skipProjects", []):
-            candidates = available_client_pipelines(project, config)
-            if candidates:
-                selected_pipeline = sorted(candidates, key=lambda item: (client_pipeline_load.get(str(item.get("pipelineId") or item.get("name")), 0), str(item.get("name"))))[0]
-                client_step, client_error = build_client_step(project, selected_pipeline, config, branches[project])
-                if client_step:
-                    client_steps.append(client_step)
-                    pipeline_key = str(client_step.get("pipelineId") or client_step.get("pipelineName"))
-                    client_pipeline_load[pipeline_key] = client_pipeline_load.get(pipeline_key, 0) + 1
-                if client_error:
-                    unresolved.append(client_error)
-            else:
-                unresolved.append(f"项目 {project} 未配置 client 打包流水线映射")
-        if not skip_server:
-            server_step, server_error = build_server_step(project, config, branches[project])
-            if server_step:
-                server_steps.append(server_step)
-            if server_error:
-                unresolved.append(server_error)
-    return {
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "branch": branch,
-        "changedProjects": projects,
-        "stages": [
-            {
-                "name": "frontend-deploy",
-                "description": "执行配置的前置部署流水线",
-                "steps": frontend_steps,
-            },
-            {
-                "name": "client-package",
-                "description": "先打所有改动项目的 client 包",
-                "steps": client_steps,
-            },
-            {
-                "name": "server-deploy",
-                "description": "client 包完成后再部署所有改动 server 项目",
-                "steps": server_steps,
-            },
-        ],
-        "unresolved": unresolved,
-    }
-
 
 def require_yunxiao_env() -> None:
     """实际触发流水线前校验云效认证环境变量。"""
@@ -538,46 +322,20 @@ def print_failure_summary(projects: list[str], error: Exception) -> None:
 
 
 def main() -> None:
-    """执行计划生成或真实触发主流程。"""
+    """校验并按需执行统一规划器生成的计划。"""
     args = parse_args()
     projects: list[str] = []
     try:
-        config = load_config(
-            Path(args.defaults_config) if args.defaults_config else None,
-            Path(args.repositories_config) if args.repositories_config else None,
-        )
-        explicit_client_projects: set[str] | None = None
-        if args.projects:
-            projects = sorted({project.strip() for project in args.projects.split(",") if project.strip()})
-        else:
-            if not args.base_ref:
-                raise ValueError("扫描本地改动必须显式提供 --base-ref")
-            projects = detect_changed_projects(Path(args.projects_root), args.base_ref)
-        if args.client_projects is not None:
-            explicit_client_projects = {project.strip() for project in args.client_projects.split(",") if project.strip()}
-        plan = build_plan(projects, config, args.skip_server, explicit_client_projects)
+        plan = json.loads(Path(args.plan_input).read_text(encoding="utf-8"))
+        projects = [str(project) for project in plan.get("changedProjects", [])]
         execution_result: dict[str, Any] | None = None
-        execution = config.get("execution", {})
+        execution = plan.get("execution", {})
         poll_interval = args.poll_interval if args.poll_interval is not None else int(execution["pollIntervalSeconds"])
         client_initial_wait = args.client_initial_wait if args.client_initial_wait is not None else int(execution["clientInitialWaitSeconds"])
         client_timeout = args.client_timeout if args.client_timeout is not None else int(execution["clientTimeoutSeconds"])
         server_timeout = args.server_timeout if args.server_timeout is not None else int(execution["serverTimeoutSeconds"])
         if args.run:
             execution_result = execute_plan(plan, poll_interval, client_initial_wait, client_timeout, server_timeout, args.verbose)
-        output = Path(args.output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        log_verbose(args.verbose, f"已生成计划：{output}")
-        log_verbose(args.verbose, f"改动项目：{', '.join(projects) if projects else '无'}")
-        log_verbose(args.verbose, f"组织 ID：{resolve_organization_id()}")
-        if plan["unresolved"]:
-            if args.verbose:
-                print("存在未配置映射：", file=sys.stderr)
-            for item in plan["unresolved"]:
-                if args.verbose:
-                    print(f"- {item}", file=sys.stderr)
-            if args.run:
-                sys.exit(3)
         print_final_summary(plan, execution_result)
     except Exception as error:
         print_failure_summary(projects, error)

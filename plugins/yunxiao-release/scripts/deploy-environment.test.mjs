@@ -152,6 +152,37 @@ const run = async () => {
       /代码已推送，但构建未触发: Webhook 返回 HTTP 500/,
     );
     assert.equal(git(repo, ['worktree', 'list', '--porcelain']).match(/^worktree /gm)?.length, 1);
+    writeJson(resolve(xdgConfigHome, 'yunxiao-release/global-defaults.json'), {
+      schemaVersion: 1,
+      releaseExecution: { pollIntervalSeconds: 1, clientInitialWaitSeconds: 0, clientTimeoutSeconds: 10, serverTimeoutSeconds: 10 },
+    });
+    writeJson(resolve(xdgConfigHome, 'yunxiao-release/global-repositories.json'), { schemaVersion: 1, repositories: {} });
+    const sharedConfigPath = resolve(repo, '.agents/yunxiao-release.json');
+    const sharedConfig = JSON.parse(readFileSync(sharedConfigPath, 'utf8'));
+    delete sharedConfig.testDeployments;
+    sharedConfig.environments = {
+      fat: {
+        branch: 'develop',
+        steps: [{ type: 'promote-branch' }, { type: 'pipeline', stage: 'server-deploy', pipelineId: '200', params: { envs: {} } }],
+      },
+    };
+    writeJson(sharedConfigPath, sharedConfig);
+    assert.throws(
+      () => planEnvironmentDeployment(repo, 'fat', { ...process.env, XDG_CONFIG_HOME: xdgConfigHome }),
+      /当前单仓环境执行器不支持/,
+    );
+    sharedConfig.environments.fat.steps.push({ type: 'webhook', hookUrl: `http://127.0.0.1:${port}/hook` });
+    writeJson(sharedConfigPath, sharedConfig);
+    assert.throws(
+      () => planEnvironmentDeployment(repo, 'fat', { ...process.env, XDG_CONFIG_HOME: xdgConfigHome }),
+      /当前单仓环境执行器不支持/,
+    );
+    delete sharedConfig.environments;
+    sharedConfig.testDeployments = [
+      { environment: 'fat', targetBranch: 'develop', hookUrl: `http://127.0.0.1:${port}/hook`, webUrl: 'https://example.com/fat' },
+      { environment: 'production', webUrl: 'https://example.com/production' },
+    ];
+    writeJson(sharedConfigPath, sharedConfig);
     writeFileSync(resolve(repo, 'dirty.txt'), 'dirty\n');
     assert.throws(() => planEnvironmentDeployment(repo, 'fat'), /工作区干净/);
     console.log('deploy environment self-test passed');

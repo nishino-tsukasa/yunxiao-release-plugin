@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""plan_changed_fat_flow.py 的回归测试。"""
+"""流水线计划执行适配器的回归测试。"""
 
 from __future__ import annotations
 
@@ -17,191 +17,20 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
-class PlanChangedFatFlowTest(unittest.TestCase):
-    """覆盖云效返回值兼容场景的回归测试。"""
+class ExecuteEnvironmentReleasePlanTest(unittest.TestCase):
+    """只覆盖执行职责；配置解析和计划生成由 Node module 测试。"""
 
-    def test_parse_devops_output_should_parse_json_object(self) -> None:
-        """JSON 对象输出应被正常解析。"""
-        result = MODULE.parse_devops_output('{"pipelineRunId":145}')
-        self.assertEqual({"pipelineRunId": 145}, result)
+    def test_parse_devops_output_should_support_json_number_and_plain_text(self) -> None:
+        self.assertEqual({"pipelineRunId": 145}, MODULE.parse_devops_output('{"pipelineRunId":145}'))
+        self.assertEqual(145, MODULE.parse_devops_output("145\n"))
+        self.assertEqual({"raw": "unexpected-text"}, MODULE.parse_devops_output("unexpected-text"))
 
-    def test_parse_devops_output_should_parse_raw_number(self) -> None:
-        """裸数字输出应被识别为流水线运行 ID。"""
-        result = MODULE.parse_devops_output("145\n")
-        self.assertEqual(145, result)
+    def test_extract_pipeline_run_id_should_support_legacy_result_shapes(self) -> None:
+        self.assertEqual("145", MODULE.extract_pipeline_run_id(145))
+        self.assertEqual("145", MODULE.extract_pipeline_run_id({"raw": "145"}))
+        self.assertEqual("145", MODULE.extract_pipeline_run_id({"data": {"pipelineRunId": 145}}))
 
-    def test_parse_devops_output_should_preserve_plain_text(self) -> None:
-        """非 JSON 文本输出应被保留到 raw 字段。"""
-        result = MODULE.parse_devops_output("unexpected-text")
-        self.assertEqual({"raw": "unexpected-text"}, result)
-
-    def test_extract_pipeline_run_id_should_support_integer(self) -> None:
-        """整数形式的 runId 应能直接提取。"""
-        run_id = MODULE.extract_pipeline_run_id(145)
-        self.assertEqual("145", run_id)
-
-    def test_extract_pipeline_run_id_should_support_raw_numeric_text(self) -> None:
-        """raw 字段中的数字字符串应能提取为 runId。"""
-        run_id = MODULE.extract_pipeline_run_id({"raw": "145"})
-        self.assertEqual("145", run_id)
-
-    def test_extract_pipeline_run_id_should_support_nested_json(self) -> None:
-        """嵌套 JSON 中的 pipelineRunId 应能提取。"""
-        run_id = MODULE.extract_pipeline_run_id({"data": {"pipelineRunId": 145}})
-        self.assertEqual("145", run_id)
-
-    def test_default_organization_id_should_match_installation_document(self) -> None:
-        """默认组织 ID 常量应保持与安装说明一致。"""
-        self.assertFalse(hasattr(MODULE, "DEFAULT_ORGANIZATION_ID"))
-
-    def test_should_package_client_should_default_true_when_not_explicit(self) -> None:
-        """未显式传入 client 项目集合时，默认仍为项目生成 client 计划。"""
-        self.assertTrue(MODULE.should_package_client("backend-service", None))
-
-    def test_project_should_use_explicit_type_and_target_branch(self) -> None:
-        """项目类型和 FAT 目标分支必须来自仓库配置。"""
-        config = {"_repositoriesByProject": {
-            "frontend-app": {"projectType": "frontend", "fatTargetBranch": "test-ui"},
-            "backend-service": {"projectType": "backend", "fatTargetBranch": "test-api"},
-        }}
-        self.assertTrue(MODULE.uses_frontend_deploy("frontend-app", config))
-        self.assertEqual("test-ui", MODULE.resolve_target_branch("frontend-app", config))
-        self.assertEqual("test-api", MODULE.resolve_target_branch("backend-service", config))
-
-    def test_build_plan_should_create_frontend_stage_without_backend_stages(self) -> None:
-        """前端项目应只生成前端部署步骤，不应进入后端 client 或 server 映射。"""
-        config = {
-            "_repositoriesByProject": {"frontend-app": {"projectType": "frontend", "fatTargetBranch": "test-ui"}},
-            "frontendDeploy": {
-                "defaultEnv": "fat",
-                "defaultEnvName": "default",
-                "projects": {
-                    "frontend-app": {
-                        "name": "frontend-pipeline",
-                        "pipelineId": "3001",
-                        "envs": {
-                            "branch": "{branch}",
-                            "project": "{project}",
-                            "envName": "{envName}",
-                            "feishuId": "{feishuId}",
-                        },
-                    }
-                },
-            },
-            "clientPackage": {"skipProjects": []},
-            "serverDeploy": {"skipProjects": [], "projects": {}},
-        }
-        plan = MODULE.build_plan(["frontend-app"], config, False, set())
-        frontend_stage = next(stage for stage in plan["stages"] if stage["name"] == "frontend-deploy")
-        client_stage = next(stage for stage in plan["stages"] if stage["name"] == "client-package")
-        server_stage = next(stage for stage in plan["stages"] if stage["name"] == "server-deploy")
-        self.assertEqual("test-ui", plan["branch"])
-        self.assertEqual("test-ui", frontend_stage["steps"][0]["params"]["envs"]["branch"])
-        self.assertEqual([], client_stage["steps"])
-        self.assertEqual([], server_stage["steps"])
-        self.assertEqual([], plan["unresolved"])
-
-    def test_build_plan_should_use_independent_target_branches_for_mixed_projects(self) -> None:
-        """混合项目计划应分别传递各仓库显式配置的目标分支。"""
-        config = {
-            "_repositoriesByProject": {
-                "frontend-app": {"projectType": "frontend", "fatTargetBranch": "test-ui"},
-                "backend-service": {"projectType": "backend", "fatTargetBranch": "test-api"},
-            },
-            "frontendDeploy": {
-                "defaultEnv": "testing",
-                "defaultEnvName": "primary",
-                "projects": {
-                    "frontend-app": {
-                        "name": "frontend-pipeline",
-                        "pipelineId": "3001",
-                        "envs": {"branch": "{branch}", "project": "{project}"},
-                    }
-                }
-            },
-            "clientPackage": {
-                "defaultEnv": "fat",
-                "defaultFeishuId": "",
-                "skipProjects": [],
-                "frameworkPipeline": {
-                    "name": "client-pipeline",
-                    "pipelineId": "1001",
-                    "projects": ["backend-service"],
-                    "envs": {"branch": "{branch}", "project": "{project}", "env": "{env}"},
-                },
-                "javaServicePipelines": [],
-            },
-            "serverDeploy": {
-                "defaultEnv": "fat",
-                "skipProjects": [],
-                "projects": {
-                    "backend-service": {
-                        "name": "server-pipeline",
-                        "pipelineId": "2001",
-                        "envs": {"branch": "{branch}", "env": "{env}"},
-                    }
-                },
-            },
-        }
-        plan = MODULE.build_plan(["frontend-app", "backend-service"], config, False, None)
-        frontend_stage = next(stage for stage in plan["stages"] if stage["name"] == "frontend-deploy")
-        client_stage = next(stage for stage in plan["stages"] if stage["name"] == "client-package")
-        server_stage = next(stage for stage in plan["stages"] if stage["name"] == "server-deploy")
-        self.assertEqual("mixed", plan["branch"])
-        self.assertEqual("test-ui", frontend_stage["steps"][0]["params"]["envs"]["branch"])
-        self.assertEqual("test-api", client_stage["steps"][0]["params"]["envs"]["branch"])
-        self.assertEqual("test-api", server_stage["steps"][0]["params"]["envs"]["branch"])
-
-    def test_should_package_client_should_follow_explicit_project_set(self) -> None:
-        """显式传入 client 项目集合后，只对集合内项目生成 client 计划。"""
-        explicit_projects = {"backend-service"}
-        self.assertTrue(MODULE.should_package_client("backend-service", explicit_projects))
-        self.assertFalse(MODULE.should_package_client("other-service", explicit_projects))
-
-    def test_build_plan_should_skip_client_steps_when_explicit_client_projects_is_empty(self) -> None:
-        """显式指定本次无需打任何 client 包时，计划中不应生成 client 步骤。"""
-        config = {
-            "_repositoriesByProject": {"backend-service": {"projectType": "backend", "fatTargetBranch": "test-api"}},
-            "clientPackage": {
-                "defaultEnv": "fat",
-                "defaultFeishuId": "",
-                "skipProjects": [],
-                "frameworkPipeline": {
-                    "name": "client-pipeline",
-                    "pipelineId": "1001",
-                    "projects": ["backend-service"],
-                    "envs": {
-                        "branch": "{branch}",
-                        "project": "{project}",
-                        "env": "{env}",
-                        "feishuId": "{feishuId}"
-                    }
-                },
-                "javaServicePipelines": []
-            },
-            "serverDeploy": {
-                "defaultEnv": "fat",
-                "skipProjects": [],
-                "projects": {
-                    "backend-service": {
-                        "name": "server-pipeline",
-                        "pipelineId": "2001",
-                        "envs": {
-                            "branch": "{branch}",
-                            "env": "{env}"
-                        }
-                    }
-                }
-            }
-        }
-        plan = MODULE.build_plan(["backend-service"], config, False, set())
-        client_stage = next(stage for stage in plan["stages"] if stage["name"] == "client-package")
-        server_stage = next(stage for stage in plan["stages"] if stage["name"] == "server-deploy")
-        self.assertEqual([], client_stage["steps"])
-        self.assertEqual(1, len(server_stage["steps"]))
-
-    def test_execute_plan_should_finish_all_client_steps_before_server_stage(self) -> None:
-        """server 阶段必须在整个 client 阶段完成后才允许开始。"""
+    def test_execute_plan_should_finish_client_stage_before_server_stage(self) -> None:
         plan = {
             "unresolved": [],
             "changedProjects": ["backend-service"],
@@ -210,13 +39,26 @@ class PlanChangedFatFlowTest(unittest.TestCase):
                 {"name": "server-deploy", "steps": [{"project": "backend-service"}]},
             ],
         }
-        with patch.object(MODULE, "require_yunxiao_env"), \
-                patch.object(MODULE, "execute_stage", side_effect=[[{"project": "backend-service"}], [{"project": "backend-service"}]]) as execute_stage:
+        with patch.object(MODULE, "require_yunxiao_env"), patch.object(
+            MODULE,
+            "execute_stage",
+            side_effect=[[{"project": "backend-service"}], [{"project": "backend-service"}]],
+        ) as execute_stage:
             MODULE.execute_plan(plan, 1, 0, 1, 1, False)
 
-        self.assertEqual(["client-package", "server-deploy"], [call.args[0]["name"] for call in execute_stage.call_args_list])
+        self.assertEqual(
+            ["client-package", "server-deploy"],
+            [call.args[0]["name"] for call in execute_stage.call_args_list],
+        )
         self.assertEqual(1, execute_stage.call_args_list[0].args[5])
         self.assertEqual(2, execute_stage.call_args_list[1].args[5])
+
+    def test_execute_plan_should_reject_unresolved_plan_before_running(self) -> None:
+        plan = {"unresolved": ["missing pipeline"], "changedProjects": [], "stages": []}
+        with patch.object(MODULE, "require_yunxiao_env"), patch.object(MODULE, "execute_stage") as execute_stage:
+            with self.assertRaisesRegex(RuntimeError, "存在未配置映射"):
+                MODULE.execute_plan(plan, 1, 0, 1, 1, False)
+        execute_stage.assert_not_called()
 
 
 if __name__ == "__main__":

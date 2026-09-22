@@ -12,7 +12,7 @@ SCRIPT_COMMIT_PATTERN=""
 SCRIPT_VERBOSE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VALIDATE_SCRIPT="${SCRIPT_DIR}/validate-commit-message.sh"
-CONFIG_HELPER="${SCRIPT_DIR}/fat_flow_config.py"
+CONFIG_HELPER="${SCRIPT_DIR}/../release-configuration-cli.mjs"
 
 # 展示脚本用法，避免调用方传参错误时无从排查。
 usage() {
@@ -137,9 +137,9 @@ ensure_repo_exists() {
 # 从当前仓库的全局配置读取完整 FAT 参数，不从名称或分支约定推断。
 load_project_settings() {
   SCRIPT_STEP="load_project_settings"
-  SCRIPT_TARGET_BRANCH="$(python3 "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field fatTargetBranch)" || fail "读取 FAT 目标分支失败"
-  SCRIPT_REMOTE_NAME="$(python3 "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field remoteName)" || fail "读取 Git remote 失败"
-  SCRIPT_COMMIT_PATTERN="$(python3 "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field commitMessagePattern)" || fail "读取提交规则失败"
+  SCRIPT_TARGET_BRANCH="$(node "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --environment fat --field environment.branch)" || fail "读取 FAT 目标分支失败"
+  SCRIPT_REMOTE_NAME="$(node "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field repository.remoteName)" || fail "读取 Git remote 失败"
+  SCRIPT_COMMIT_PATTERN="$(node "$CONFIG_HELPER" get --repo "$SCRIPT_REPO" --field git.commitMessagePattern)" || fail "读取提交规则失败"
 }
 
 # 脚本只接管“已干净仓库”的固定流程，未提交改动交给上层 skill 判断。

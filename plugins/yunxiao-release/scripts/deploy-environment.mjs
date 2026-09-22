@@ -7,7 +7,8 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readUserMember } from './configure-member.mjs';
-import { readProjectConfig } from './release-state.mjs';
+import { planEnvironmentRelease } from './environment-release-planner.mjs';
+import { resolveReleaseConfiguration } from './release-configuration.mjs';
 
 const fail = (message) => {
   throw new Error(message);
@@ -67,8 +68,8 @@ const normalizeFeishuId = (value) => {
 };
 
 // 项目本地值优先；缺失时回退到用户级 member.json，且不把 ID 写入执行结果或日志。
-const resolveFeishuId = (rootDir, config, env) => {
-  const localPath = resolve(rootDir, config.localConfigFile);
+const resolveFeishuId = (rootDir, localConfigFile, env) => {
+  const localPath = resolve(rootDir, localConfigFile);
   if (existsSync(localPath)) {
     const realRelativePath = relative(rootDir, realpathSync(localPath));
     if (realRelativePath.startsWith('..') || isAbsolute(realRelativePath)) {
@@ -84,10 +85,14 @@ const resolveFeishuId = (rootDir, config, env) => {
 // 手动环境只解析发布入口；自动环境额外验证仓库、当前分支和远端分支。
 export const planEnvironmentDeployment = (rootArgument, environment, env = process.env) => {
   const rootDir = realpathSync(resolve(rootArgument));
-  const config = readProjectConfig(rootDir);
-  const deployment = config.testDeployments.find((item) => item.environment === environment);
-  if (!deployment) fail(`未配置发布环境: ${environment}`);
-  if (!deployment.targetBranch) return { mode: 'manual', environment, webUrl: deployment.webUrl };
+  const profile = resolveReleaseConfiguration(rootDir, env);
+  const configured = profile.environments[environment];
+  if (!configured) fail(`未配置发布环境: ${environment}`);
+  if (configured.steps.some((step) => step.type === 'pipeline')) {
+    fail(`环境 ${environment} 包含 pipeline 步骤；当前单仓环境执行器不支持，FAT 流程请使用 yunxiao-release fat-flow`);
+  }
+  const manual = configured.steps.find((step) => step.type === 'manual-link');
+  if (manual) return { mode: 'manual', environment, webUrl: manual.webUrl };
   const repositoryRoot = resolve(runGit(rootDir, ['rev-parse', '--show-toplevel']).stdout);
   if (repositoryRoot !== rootDir) fail(`repo-root 必须是 Git 仓库根目录: ${repositoryRoot}`);
   if (runGit(rootDir, ['status', '--porcelain=v1', '--untracked-files=normal']).stdout) {
@@ -95,24 +100,33 @@ export const planEnvironmentDeployment = (rootArgument, environment, env = proce
   }
   const sourceBranch = runGit(rootDir, ['symbolic-ref', '--quiet', '--short', 'HEAD'], { allowFailure: true }).stdout;
   if (!sourceBranch) fail('自动发布不支持 detached HEAD');
-  validateRemote(rootDir, config.remoteName);
-  [sourceBranch, config.targetBranch, deployment.targetBranch].forEach((branch) => validateBranch(rootDir, branch, '分支'));
-  if (sourceBranch === config.targetBranch || sourceBranch === deployment.targetBranch) {
+  validateRemote(rootDir, profile.repository.remoteName);
+  [sourceBranch, profile.mergeRequest.targetBranch, configured.branch].forEach((branch) => validateBranch(rootDir, branch, '分支'));
+  if (sourceBranch === profile.mergeRequest.targetBranch || sourceBranch === configured.branch) {
     fail('当前分支不能是 MR 目标分支或测试目标分支');
   }
-  if (config.targetBranch === deployment.targetBranch) fail('MR 目标分支与测试目标分支不能相同');
-  getRemoteBranchSha(rootDir, config.remoteName, config.targetBranch);
-  getRemoteBranchSha(rootDir, config.remoteName, deployment.targetBranch);
-  resolveFeishuId(rootDir, config, env);
+  if (profile.mergeRequest.targetBranch === configured.branch) fail('MR 目标分支与测试目标分支不能相同');
+  getRemoteBranchSha(rootDir, profile.repository.remoteName, profile.mergeRequest.targetBranch);
+  getRemoteBranchSha(rootDir, profile.repository.remoteName, configured.branch);
+  resolveFeishuId(rootDir, profile.storage.localConfigFile, env);
+  const releasePlan = planEnvironmentRelease({
+    environment,
+    repositories: [{ profile, sourceBranch, changedFiles: [] }],
+    allowedStepTypes: ['promote-branch', 'webhook', 'manual-link'],
+  });
+  if (releasePlan.unresolved.length) fail(releasePlan.unresolved.join('；'));
+  const promotion = releasePlan.stages.find((stage) => stage.name === 'promote-branch')?.steps[0];
+  const webhook = releasePlan.stages.find((stage) => stage.name === 'webhook')?.steps[0];
+  if (!promotion || !webhook) fail(`环境 ${environment} 缺少 promote-branch 或 webhook 步骤`);
   return {
     mode: 'automatic',
     environment,
-    remoteName: config.remoteName,
-    sourceBranch,
-    releaseBranch: config.targetBranch,
-    targetBranch: deployment.targetBranch,
-    hookUrl: deployment.hookUrl,
-    ...(deployment.webUrl ? { webUrl: deployment.webUrl } : {}),
+    remoteName: promotion.remoteName,
+    sourceBranch: promotion.sourceBranch,
+    releaseBranch: promotion.prerequisiteBranch,
+    targetBranch: promotion.targetBranch,
+    hookUrl: webhook.hookUrl,
+    ...(webhook.webUrl ? { webUrl: webhook.webUrl } : {}),
   };
 };
 
@@ -160,9 +174,8 @@ export const deployEnvironment = async (rootArgument, environment, options = {})
   const env = options.env ?? process.env;
   const plan = planEnvironmentDeployment(rootDir, environment, env);
   if (plan.mode === 'manual') return plan;
-  const config = readProjectConfig(rootDir);
-  const deployment = config.testDeployments.find((item) => item.environment === environment);
-  const feishuId = resolveFeishuId(rootDir, config, env);
+  const profile = resolveReleaseConfiguration(rootDir, env);
+  const feishuId = resolveFeishuId(rootDir, profile.storage.localConfigFile, env);
   fetchBranch(rootDir, plan.remoteName, plan.releaseBranch);
   fetchBranch(rootDir, plan.remoteName, plan.targetBranch);
   mergeRelease(rootDir, plan.remoteName, plan.releaseBranch);
@@ -184,7 +197,7 @@ export const deployEnvironment = async (rootArgument, environment, options = {})
       fail(`远端 ${plan.targetBranch} 未包含当前发布代码`);
     }
     try {
-      await triggerWebhook(deployment.hookUrl, feishuId, plan.targetBranch, options.fetchImpl ?? fetch);
+      await triggerWebhook(plan.hookUrl, feishuId, plan.targetBranch, options.fetchImpl ?? fetch);
     } catch (error) {
       fail(`代码已推送，但构建未触发: ${error instanceof Error ? error.message : String(error)}`);
     }

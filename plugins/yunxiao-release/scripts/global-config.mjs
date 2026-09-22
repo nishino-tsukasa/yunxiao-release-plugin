@@ -3,6 +3,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 
+const globalDefaultFields = new Set([
+  'organizationId', 'localConfigFile', 'runtimeFile', 'commentsFile',
+  'releaseExecution',
+]);
+
+export const assertGlobalDefaultScope = (defaults) => {
+  const invalid = Object.keys(defaults).filter((key) => !globalDefaultFields.has(key));
+  if (invalid.length) throw new Error(`全局默认配置不能包含仓库差异字段: ${invalid.join(', ')}`);
+};
+
 export const resolveGlobalConfigDir = (env = process.env) => {
   const home = [env.HOME, env.USERPROFILE].find((value) => value && isAbsolute(value)) || homedir();
   const configHome = env.XDG_CONFIG_HOME && isAbsolute(env.XDG_CONFIG_HOME)
@@ -55,7 +65,7 @@ export const readGlobalConfigFiles = (env = process.env) => {
   const repositories = rawRepositories.repositories ?? {};
   if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults)) throw new Error('全局默认配置必须是对象');
   if (!repositories || typeof repositories !== 'object' || Array.isArray(repositories)) throw new Error('全局 repositories 必须是对象');
-  if (Object.hasOwn(defaults, 'repositoryId')) throw new Error('全局默认配置不能包含 repositoryId');
+  assertGlobalDefaultScope(defaults);
   return { defaults, repositories, defaultsPath, repositoriesPath, source: 'split' };
 };
 

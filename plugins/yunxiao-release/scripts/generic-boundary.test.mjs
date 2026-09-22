@@ -21,6 +21,9 @@ const forbidden = [
   /fat\/fat/i,
   /fat-pipeline-config/i,
   /project-kind\.sh/i,
+  /projectConfigMigration/,
+  /projectMigration/,
+  /finalizeProjectMigration/,
   /\b142296\b/,
   /\b49\d{5}\b/,
 ];

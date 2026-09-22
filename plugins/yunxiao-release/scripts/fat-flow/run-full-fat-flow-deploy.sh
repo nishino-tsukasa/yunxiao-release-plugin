@@ -7,13 +7,14 @@ SCRIPT_BRANCH=""
 SCRIPT_REPOS=()
 SCRIPT_PROJECTS=()
 SCRIPT_CLIENT_PROJECTS=()
+SCRIPT_CLIENT_REPOS=()
 SCRIPT_MANUAL_CLIENT_PROJECTS=()
 SCRIPT_SERVER_ONLY=0
 SCRIPT_VERBOSE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_FAT_FLOW_SCRIPT="${SCRIPT_DIR}/run-fat-flow.sh"
 PLAN_DEPLOY_SCRIPT="${SCRIPT_DIR}/plan-changed-fat-flow.sh"
-CONFIG_HELPER="${SCRIPT_DIR}/fat_flow_config.py"
+CONFIG_HELPER="${SCRIPT_DIR}/../release-configuration-cli.mjs"
 
 # 展示脚本用法，避免固定流程入口传参不完整时难以排查。
 usage() {
@@ -139,13 +140,14 @@ ensure_scripts_exist() {
     fail "plan-changed-fat-flow.sh 不存在或不可执行"
   fi
   if [[ ! -f "$CONFIG_HELPER" ]]; then
-    fail "fat_flow_config.py 不存在"
+    fail "release-configuration-cli.mjs 不存在"
   fi
 }
 
 # 校验 repo 参数并提前收敛出部署项目名，减少后续重复推断。
 normalize_repos() {
   local repo
+  local project
   SCRIPT_STEP="normalize_repos"
   SCRIPT_PROJECTS=()
   for repo in "${SCRIPT_REPOS[@]}"; do
@@ -155,7 +157,13 @@ normalize_repos() {
     if [[ "$(git -C "$repo" rev-parse --is-inside-work-tree 2>/dev/null || true)" != "true" ]]; then
       fail "目标目录不是 Git 仓库: $repo"
     fi
-    SCRIPT_PROJECTS+=("$(basename "$repo")")
+    if ! project="$(node "$CONFIG_HELPER" get --repo "$repo" --field project)"; then
+      fail "无法解析仓库配置身份: $repo"
+    fi
+    if [[ -z "$project" ]]; then
+      fail "仓库配置缺少 project: $repo"
+    fi
+    SCRIPT_PROJECTS+=("$project")
   done
 }
 
@@ -175,7 +183,7 @@ normalize_projects() {
       unique_projects+=("$project")
     fi
   done
-  SCRIPT_PROJECTS=("${unique_projects[@]-}")
+  SCRIPT_PROJECTS=("${unique_projects[@]}")
   for project in "${SCRIPT_MANUAL_CLIENT_PROJECTS[@]-}"; do
     if [[ -z "$project" ]]; then
       continue
@@ -189,20 +197,28 @@ normalize_projects() {
       unique_client_projects+=("$project")
     fi
   done
-  SCRIPT_MANUAL_CLIENT_PROJECTS=("${unique_client_projects[@]-}")
+  if [[ ${#unique_client_projects[@]} -eq 0 ]]; then
+    SCRIPT_MANUAL_CLIENT_PROJECTS=()
+  else
+    SCRIPT_MANUAL_CLIENT_PROJECTS=("${unique_client_projects[@]}")
+  fi
 }
 
 # 按仓库显式配置判断本次是否需要打 Client 包。
 repo_needs_client_package() {
   local repo="$1"
-  python3 "$CONFIG_HELPER" needs-client --repo "$repo" --branch "$SCRIPT_BRANCH"
+  node "$CONFIG_HELPER" needs-client --repo "$repo" --branch "$SCRIPT_BRANCH" --environment fat
 }
 
 # 在执行 fat flow 前预先确定哪些项目需要打 client，避免部署阶段再做推理。
 collect_client_projects() {
   local repo
+  local project
+  local status
+  local index
   SCRIPT_STEP="collect_client_projects"
   SCRIPT_CLIENT_PROJECTS=()
+  SCRIPT_CLIENT_REPOS=()
   if [[ "$SCRIPT_SERVER_ONLY" == "1" ]]; then
     return
   fi
@@ -211,20 +227,30 @@ collect_client_projects() {
       SCRIPT_CLIENT_PROJECTS=("${SCRIPT_MANUAL_CLIENT_PROJECTS[@]}")
       return
     fi
-    local project
-    local mode
     for project in "${SCRIPT_PROJECTS[@]}"; do
-      mode="$(python3 "$CONFIG_HELPER" get --project "$project" --field clientDetection.mode)" || fail "读取 Client 配置失败: $project"
-      if [[ "$mode" != "never" ]]; then
+      if node "$CONFIG_HELPER" has-client-stage --project "$project" --environment fat; then
         SCRIPT_CLIENT_PROJECTS+=("$project")
+      else
+        status=$?
+        if [[ "$status" -ne 1 ]]; then
+          fail "读取项目 Client 配置失败: $project"
+        fi
       fi
     done
     return
   fi
+  index=0
   for repo in "${SCRIPT_REPOS[@]}"; do
     if repo_needs_client_package "$repo"; then
-      SCRIPT_CLIENT_PROJECTS+=("$(basename "$repo")")
+      SCRIPT_CLIENT_PROJECTS+=("${SCRIPT_PROJECTS[$index]}")
+      SCRIPT_CLIENT_REPOS+=("$repo")
+    else
+      status=$?
+      if [[ "$status" -ne 1 ]]; then
+        fail "读取仓库 Client 配置失败: $repo"
+      fi
     fi
+    index=$((index + 1))
   done
 }
 
@@ -272,17 +298,27 @@ run_git_fat_flow_for_each_repo() {
 run_single_deploy() {
   local projects_csv
   local client_projects_csv
+  local repos_csv
+  local client_repos_csv
+  local identity_args=()
   SCRIPT_STEP="run_deploy"
   projects_csv="$(join_csv "${SCRIPT_PROJECTS[@]}")"
   # 仅修改 server 时，client 项目集合为空是合法输入；显式传空值让下游跳过 client 阶段。
   client_projects_csv="$(join_csv "${SCRIPT_CLIENT_PROJECTS[@]-}")"
+  if [[ ${#SCRIPT_REPOS[@]} -gt 0 ]]; then
+    repos_csv="$(join_csv "${SCRIPT_REPOS[@]}")"
+    client_repos_csv="$(join_csv "${SCRIPT_CLIENT_REPOS[@]-}")"
+    identity_args=(--repos "$repos_csv" --client-repos "$client_repos_csv")
+  else
+    identity_args=(--projects "$projects_csv" --client-projects "$client_projects_csv")
+  fi
   log_info "开始执行统一 FAT 部署: projects=${projects_csv} clientProjects=${client_projects_csv:-none}"
   log_progress "stage=deploy status=started projects=${projects_csv} clientProjects=${client_projects_csv:-none} order=frontend-deploy-then-client-package-then-server-deploy"
   if [[ "$SCRIPT_VERBOSE" == "1" ]]; then
-    "$PLAN_DEPLOY_SCRIPT" --projects "$projects_csv" --client-projects "$client_projects_csv" --run --verbose || fail "统一 FAT 部署失败"
+    "$PLAN_DEPLOY_SCRIPT" "${identity_args[@]}" --branch "$SCRIPT_BRANCH" --run --verbose || fail "统一 FAT 部署失败"
     return
   fi
-  if ! "$PLAN_DEPLOY_SCRIPT" --projects "$projects_csv" --client-projects "$client_projects_csv" --run; then
+  if ! "$PLAN_DEPLOY_SCRIPT" "${identity_args[@]}" --branch "$SCRIPT_BRANCH" --run; then
     fail "统一 FAT 部署失败，详见上方部署日志"
   fi
   log_progress "stage=deploy status=success projects=${projects_csv}"
