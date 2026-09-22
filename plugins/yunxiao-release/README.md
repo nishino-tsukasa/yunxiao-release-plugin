@@ -49,7 +49,7 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 
 ## 项目配置
 
-配置按字段使用以下优先级：项目 `.agents/yunxiao-release.json` > 全局仓库配置 > 全局默认配置 > 插件内置默认值。项目配置可以只保留需要覆盖的字段。
+配置按字段使用以下优先级：项目 `.agents/yunxiao-release.json` > 全局仓库配置 > 全局默认配置 > 插件内置默认值。全局仓库项支持项目配置的全部字段，因此项目文件可以不存在，也可以只保留特殊覆盖字段。
 
 全局配置拆分为：
 
@@ -82,7 +82,11 @@ npx github:FlyAboveGrass/yunxiao-release-plugin configure
 }
 ```
 
-仓库键由 Git remote 标准化得到。`repositoryId` 只能放在项目配置或具体仓库项中，不能放入全局默认配置。配置 Skill 可读取任意当前会话可访问的格式，规范化并经 MCP 核实后，只展示摘要并写入这两个文件。
+仓库键由 Git remote 标准化得到。每个仓库项可配置 `repositoryId`、MR 目标分支、评审人、版本与公告文件、内部状态路径、验证命令和全部环境发布配置；`repositoryId` 不能放入全局默认配置。配置 Skill 可读取任意当前会话可访问的格式，规范化并经 MCP 核实后，只展示摘要并写入这两个文件。
+
+迁移完成后，配置 Skill 会重新核对有效配置：前端项目保留项目内配置作为显式覆盖，后端项目仅在全部字段已被集中配置覆盖时删除项目内共享配置。
+
+分支约定：后端项目和前端 SaaS 项目的 MR 目标分支为 `release`；`develop`、`fat/fat` 等测试发布分支仅配置在 `testDeployments` 中。
 
 共享配置位于 `.agents/yunxiao-release.json`：
 

@@ -2,12 +2,12 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import { normalizeRemoteUrl, readGlobalProjectConfig, resolveGlobalDefaultsPath, resolveGlobalRepositoriesPath } from './global-config.mjs';
-import { applyGlobalConfig, initializeGlobalConfig } from './configure-global.mjs';
+import { applyGlobalConfig, finalizeProjectMigration, initializeGlobalConfig } from './configure-global.mjs';
 import { readProjectConfig } from './release-state.mjs';
 
 const root = mkdtempSync(resolve(tmpdir(), 'yunxiao-global-config-'));
@@ -22,7 +22,7 @@ initializeGlobalConfig(emptyEnv);
 assert.deepEqual(applyGlobalConfig({
   defaults: { organizationId: 'org-2' },
   repositories: { 'codeup.aliyun.com/group/repo': { repositoryId: '2' } },
-}, emptyEnv), { defaultFieldCount: 1, repositoryCount: 1 });
+}, emptyEnv), { defaultFieldCount: 1, repositoryCount: 1, projectConfigAction: 'not-requested' });
 assert.equal(JSON.parse(readFileSync(resolveGlobalDefaultsPath(emptyEnv))).organizationId, 'org-2');
 assert.equal(JSON.parse(readFileSync(resolveGlobalRepositoriesPath(emptyEnv))).repositories['codeup.aliyun.com/group/repo'].repositoryId, '2');
 assert.throws(() => applyGlobalConfig({ defaults: { repositoryId: 'bad' } }, emptyEnv), /不能包含 repositoryId/);
@@ -31,18 +31,38 @@ writeFileSync(resolveGlobalDefaultsPath(env), `${JSON.stringify({
 })}\n`);
 writeFileSync(resolveGlobalRepositoriesPath(env), `${JSON.stringify({
   schemaVersion: 1, repositories: {
-    'codeup.aliyun.com/supermonkey/monkey-core': { repositoryId: 'repo-1', targetBranch: 'fat/fat' },
+    'codeup.aliyun.com/supermonkey/monkey-core': {
+      projectType: 'backend',
+      repositoryId: 'repo-1',
+      remoteName: 'origin',
+      targetBranch: 'release',
+      reviewerMode: 'fixed',
+      reviewerUserIds: ['reviewer-1'],
+      versionFile: null,
+      announcementFile: null,
+      localConfigFile: '.agents/yunxiao-release.local.json',
+      runtimeFile: '.agents/runtime/yunxiao-release-mr.json',
+      commentsFile: '.agents/runtime/yunxiao-release-comments.md',
+      validationCommands: ['git diff --check'],
+      testDeployments: [{ environment: 'fat', targetBranch: 'fat/fat', hookUrl: 'https://example.com/hook' }],
+    },
   },
 })}\n`);
 
 assert.equal(normalizeRemoteUrl('https://codeup.aliyun.com/supermonkey/monkey-core.git'), 'codeup.aliyun.com/supermonkey/monkey-core');
 assert.equal(readGlobalProjectConfig(root, env).repositoryKey, 'codeup.aliyun.com/supermonkey/monkey-core');
 assert.equal(readProjectConfig(root, env).repositoryId, 'repo-1');
-assert.equal(readProjectConfig(root, env).targetBranch, 'fat/fat');
+assert.equal(readProjectConfig(root, env).targetBranch, 'release');
+assert.equal(readProjectConfig(root, env).versionFile, null);
+assert.equal(readProjectConfig(root, env).testDeployments[0].targetBranch, 'fat/fat');
 mkdirSync(resolve(root, '.agents'));
-writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"","repositoryId":"","targetBranch":"release"}\n');
+writeFileSync(resolve(root, '.agents/yunxiao-release.json'), '{"organizationId":"org-1","repositoryId":"repo-1","targetBranch":"release"}\n');
 assert.equal(readProjectConfig(root, env).targetBranch, 'release');
 assert.equal(readProjectConfig(root, env).repositoryId, 'repo-1');
+assert.equal(finalizeProjectMigration({ rootDir: root, projectType: 'frontend' }, env), 'retained');
+assert.equal(existsSync(resolve(root, '.agents/yunxiao-release.json')), true);
+assert.equal(finalizeProjectMigration({ rootDir: root, projectType: 'backend' }, env), 'deleted');
+assert.equal(existsSync(resolve(root, '.agents/yunxiao-release.json')), false);
 
 writeFileSync(resolveGlobalDefaultsPath(env), '{"schemaVersion":1,"repositoryId":"bad"}\n');
 assert.throws(() => readProjectConfig(root, env), /不能包含 repositoryId/);

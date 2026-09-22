@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-import { chmodSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { readGlobalConfigFiles, resolveGlobalDefaultsPath, resolveGlobalRepositoriesPath } from './global-config.mjs';
+import { readProjectConfig } from './release-state.mjs';
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -48,7 +49,44 @@ export const applyGlobalConfig = (payload, env = process.env) => {
   });
   writeJsonAtomic(resolveGlobalDefaultsPath(env), { schemaVersion: 1, ...defaults });
   writeJsonAtomic(resolveGlobalRepositoriesPath(env), { schemaVersion: 1, repositories });
-  return { defaultFieldCount: Object.keys(defaults).length, repositoryCount: Object.keys(repositories).length };
+  const projectConfigAction = payload.projectMigration
+    ? finalizeProjectMigration(payload.projectMigration, env)
+    : 'not-requested';
+  return { defaultFieldCount: Object.keys(defaults).length, repositoryCount: Object.keys(repositories).length, projectConfigAction };
+};
+
+export const finalizeProjectMigration = (migration, env = process.env) => {
+  if (!isObject(migration)) throw new Error('projectMigration 必须是对象');
+  const rootDir = realpathSync(resolve(String(migration.rootDir || '')));
+  const projectType = migration.projectType;
+  if (!['frontend', 'backend'].includes(projectType)) throw new Error('projectType 必须是 frontend 或 backend');
+  const projectConfigPath = resolve(rootDir, '.agents/yunxiao-release.json');
+  if (!existsSync(projectConfigPath)) return 'absent';
+  const raw = JSON.parse(readFileSync(projectConfigPath, 'utf8'));
+  const temporaryPath = `${projectConfigPath}.${randomUUID()}.migration`;
+  renameSync(projectConfigPath, temporaryPath);
+  let effective;
+  try {
+    effective = readProjectConfig(rootDir, env);
+  } catch (error) {
+    renameSync(temporaryPath, projectConfigPath);
+    throw error;
+  }
+  const ignored = new Set(['reviewMode', 'tokenSource']);
+  const mismatches = Object.entries(raw)
+    .filter(([key]) => !ignored.has(key))
+    .filter(([key, value]) => JSON.stringify(effective[key]) !== JSON.stringify(value))
+    .map(([key]) => key);
+  if (mismatches.length) {
+    renameSync(temporaryPath, projectConfigPath);
+    throw new Error(`集中配置未完整覆盖项目字段: ${mismatches.join(', ')}`);
+  }
+  if (projectType === 'frontend') {
+    renameSync(temporaryPath, projectConfigPath);
+    return 'retained';
+  }
+  unlinkSync(temporaryPath);
+  return 'deleted';
 };
 
 const readStdinJson = async () => {
