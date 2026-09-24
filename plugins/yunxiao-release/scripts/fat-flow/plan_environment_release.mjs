@@ -20,7 +20,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultOutput = resolve(scriptDir, 'output/changed-fat-flow-plan.json');
 
 const parseArgs = (argv) => {
-  const args = { environment: 'fat', output: defaultOutput, run: false, validate: false, verbose: false, skipServer: false, resume: false, retryFailed: false };
+  const args = { environment: 'fat', output: defaultOutput, dependsOn: [], preflightMergeBranches: [], run: false, validate: false, verbose: false, skipServer: false, resume: false, retryFailed: false };
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
     if (key === '--run') args.run = true;
@@ -34,6 +34,14 @@ const parseArgs = (argv) => {
       const value = argv[index + 1];
       if (value === undefined) throw new Error(`${key} 缺少参数值`);
       index += 1;
+      if (key === '--depends-on') {
+        args.dependsOn.push(value);
+        continue;
+      }
+      if (key === '--preflight-merge-branch') {
+        args.preflightMergeBranches.push(value);
+        continue;
+      }
       const names = {
         '--environment': 'environment', '--projects': 'projects', '--client-projects': 'clientProjects',
         '--repository-keys': 'repositoryKeys', '--client-repository-keys': 'clientRepositoryKeys',
@@ -55,7 +63,7 @@ const printHelp = () => console.log(`Usage:
   plan-environment-release --projects <a,b> --branch <source> [--client-projects <a,b>] [--run]
   plan-environment-release --repository-keys <host/group/repo,...> --branch <source> [--client-repository-keys <...>] [--run]
   plan-environment-release --repos <path,...> --branch <source> [--client-repos <path,...>] [--run]
-  可选：--environment、--defaults-config、--repositories-config、--skip-server、超时参数
+  可选：--depends-on <consumer:provider>、--preflight-merge-branch <project:branch>（均可重复指定）、--environment、--defaults-config、--repositories-config、--skip-server、超时参数
   失败后：重复相同仓库和分支参数，并添加 --resume --state-file <上次输出路径> [--retry-failed]`);
 
 const remoteRevision = (repo, remote, branch) => {
@@ -96,12 +104,27 @@ const main = () => {
   }
   const identifiers = [...new Set((args.repos ?? args.repositoryKeys ?? args.projects).split(',').map((value) => value.trim()).filter(Boolean))].sort();
   const mode = args.repos ? 'repos' : (args.repositoryKeys ? 'repositoryKeys' : 'projects');
+  const dependencies = args.dependsOn.map((value) => {
+    const parts = value.split(':').map((part) => part.trim());
+    if (parts.length !== 2 || parts.some((part) => !part)) throw new Error(`--depends-on 格式必须是 <consumer:provider>: ${value}`);
+    return { consumer: parts[0], provider: parts[1] };
+  }).sort((left, right) => `${left.consumer}:${left.provider}`.localeCompare(`${right.consumer}:${right.provider}`));
+  const preflightMergeBranches = args.preflightMergeBranches.map((value) => {
+    const parts = value.split(':').map((part) => part.trim());
+    if (parts.length !== 2 || parts.some((part) => !part)) throw new Error(`--preflight-merge-branch 格式必须是 <project:branch>: ${value}`);
+    return { project: parts[0], branch: parts[1] };
+  }).sort((left, right) => `${left.project}:${left.branch}`.localeCompare(`${right.project}:${right.branch}`));
+  if (new Set(preflightMergeBranches.map(({ project, branch }) => `${project}\0${branch}`)).size !== preflightMergeBranches.length) {
+    throw new Error('本次发布预合并分支重复');
+  }
+  if (preflightMergeBranches.length && !args.repos) throw new Error('--preflight-merge-branch 需要 --repos 才能检查本地 Git 分支');
+  const request = { mode, identifiers, sourceBranch: args.branch, environment: args.environment, dependencies, preflightMergeBranches };
   if (args.retryFailed && !args.resume) throw new Error('--retry-failed 只能与 --resume 一起使用');
   if (args.resume) {
     if (!args.run || !args.stateFile) throw new Error('--resume 需要 --run 和 --state-file');
     const frozenPath = `${resolve(args.stateFile)}.plan.json`;
     const frozen = JSON.parse(readFileSync(frozenPath, 'utf8'));
-    if (JSON.stringify(frozen.request) !== JSON.stringify({ mode, identifiers, sourceBranch: args.branch, environment: args.environment })) {
+    if (JSON.stringify(frozen.request) !== JSON.stringify(request)) {
       throw new Error('续跑输入与原发布计划不一致');
     }
     verifyRevisions(frozen);
@@ -137,6 +160,9 @@ const main = () => {
     };
   });
   const projects = entries.map(({ profile }) => profile.project);
+  for (const { project } of preflightMergeBranches) {
+    if (!projects.includes(project)) throw new Error(`本次发布预合并分支必须引用已选项目: ${project}`);
+  }
   const executionVariants = new Set(entries.map(({ profile }) => JSON.stringify(profile.execution)));
   if (executionVariants.size > 1) {
     throw new Error('同一次多仓发布的 releaseExecution 必须完全一致');
@@ -159,7 +185,9 @@ const main = () => {
     environment: args.environment,
     branch: branches.length === 1 ? branches[0] : 'mixed',
     changedProjects: projects,
-    request: { mode, identifiers, sourceBranch: args.branch, environment: args.environment },
+    request,
+    dependencies,
+    preflightMergeBranches,
     stages: pipelineStages.map((name) => (
       configuredPipelineStages.find((stage) => stage.name === name) ?? { name, description: name, steps: [] }
     )),
@@ -169,7 +197,7 @@ const main = () => {
     ],
     execution: entries[0]?.profile.execution ?? {},
   };
-  const dependencyWaves = planDependencyWaves(entries, args.environment);
+  const dependencyWaves = planDependencyWaves(entries, dependencies);
   plan.waves = dependencyWaves.map((waveProjects) => ({
     projects: waveProjects,
     stages: plan.stages.map((stage) => ({
@@ -178,6 +206,14 @@ const main = () => {
     })),
   }));
   if (args.run && args.repos) {
+    for (const { repo, profile } of identifiers.map((repo, index) => ({ repo, profile: entries[index].profile }))) {
+      const branchesToCheck = preflightMergeBranches.filter(({ project }) => project === profile.project).map(({ branch }) => branch);
+      if (!branchesToCheck.length) continue;
+      const result = spawnSync('node', [resolve(scriptDir, 'preflight-merge-branches.mjs'), repo, args.branch, args.environment, ...branchesToCheck], {
+        encoding: 'utf8', stdio: 'inherit',
+      });
+      if (result.status !== 0) throw new Error(`本次构建分支预合并检查失败: ${profile.project}`);
+    }
     plan.revisions = identifiers.map((repo, index) => {
       const profile = entries[index].profile;
       const branch = profile.environments[args.environment]?.branch;

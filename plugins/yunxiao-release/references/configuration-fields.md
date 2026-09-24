@@ -74,10 +74,7 @@
 |---|---|---|
 | `branch` | string\|null | 自动发布的环境目标分支；纯人工入口为 `null` |
 | `steps` | object[] | 按顺序声明的环境动作 |
-| `dependsOn` | string[] | 多仓发布中本项目依赖的项目名；两者同时选中时，先完成依赖项目的 Client 和 Server，再发布本项目。未选中的依赖不生成步骤 |
-| `preflightMergeBranches` | string[] | 发布前模拟把本次环境目标分支合入这些显式分支；有冲突则在任何远端推送前停止。例如 JDK17 构建使用的专属分支 |
-
-`dependsOn` 和 `preflightMergeBranches` 都是当前环境的可选字段，使用非空、不重复的字符串。依赖项目名取仓库配置解析后的 `project`；被选择项目之间若形成环，计划阶段停止。预检目标分支必须已存在于配置的 Git remote，不从项目类型或分支命名推断。
+项目先后关系与额外构建分支预检取决于本次改动，不写入 `environments`。多仓发布时按实际变更传入 `--depends-on <consumer:provider>` 和 `--preflight-merge-branch <project:branch>`；两者都可重复，未指定时不附加顺序或额外分支预检。`dependsOn`、`preflightMergeBranches` 作为固定配置会被拒绝。
 
 ## Step 字段
 

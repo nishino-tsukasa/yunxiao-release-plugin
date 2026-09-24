@@ -84,8 +84,8 @@
 - 自动发布：`branch` 配合 `promote-branch` 与后续 `webhook` 或 `pipeline` 步骤；待发布的远端源分支使用 MR 配置的 `targetBranch`。
 - 手动发布：`branch` 为 `null`，使用 `manual-link` 步骤；只返回人工发布入口，不执行 Git、流水线或 webhook。
 - `deploy-environment` 与 `yunxiao-release fat-flow` 共用 Planner 和 Pipeline Executor；前者生成单仓计划，后者生成多仓计划。一个环境不能同时配置 `pipeline` 与 `webhook`。
-- 多仓 FAT 可在每个环境声明 `dependsOn` 项目名，Planner 按依赖波次执行；每个波次先 Client 后 Server，同波次的不同流水线仍可并行。可声明 `preflightMergeBranches`，在任何推送前模拟环境分支与指定构建分支的合并并检查冲突。
-- 多仓流水线执行会输出 `resume_state`。续跑使用相同仓库、源分支和环境，以及 `--resume --state-file <resume_state>`；插件核对冻结计划与远端环境分支提交，只复用已成功的运行 ID。失败运行需先在云效重试任务，或显式使用 `--retry-failed` 创建新运行；触发结果未知时停止人工核对，避免重复触发。Git 推送阶段失败时重新预检并执行，已合入的分支不会重复生成合并提交。
+- 多仓 FAT 的服务先后关系不是固定环境配置。基于本次改动与契约证据，按需重复传入 `--depends-on <consumer:provider>`；仅引用本次选中的项目，Planner 检查重复、自依赖和环后按波次执行。未指定则同波次，每个波次先 Client 后 Server，不同流水线可并行。需要检查本次额外构建分支时，按需重复传入 `--preflight-merge-branch <project:branch>`，在任何推送前模拟合并；仅 `--repo` 模式支持此检查。
+- 多仓流水线执行会输出 `resume_state`。续跑使用相同仓库、源分支、环境及本次依赖/预检参数，并追加 `--resume --state-file <resume_state>`；插件核对冻结计划与远端环境分支提交，只复用已成功的运行 ID。失败运行需先在云效重试任务，或显式使用 `--retry-failed` 创建新运行；触发结果未知时停止人工核对，避免重复触发。Git 推送阶段失败时重新预检并执行，已合入的分支不会重复生成合并提交。
 - 所有 URL 只允许 HTTP(S)。每次只发布一个环境，不根据 `fat`、`uat`、`production` 等名称猜测模式。
 - 自动发布的 webhook 请求固定为 `POST application/json`。`feishuId` 已配置时请求体是 `{ "feishuId": "...", "branch": "<targetBranch>" }`，未配置时仅发送 `{ "branch": "<targetBranch>" }`，不阻断发布。
 

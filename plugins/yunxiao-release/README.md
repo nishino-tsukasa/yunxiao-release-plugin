@@ -200,7 +200,7 @@ MR/环境分支、提交规则、流水线和 Client 触发条件均是仓库数
 
 `deploy-environment` 可执行单仓库 `promote-branch + pipeline`、`promote-branch + webhook`，或返回 `manual-link`；`yunxiao-release fat-flow` 使用同一 Planner 与 Pipeline Executor 编排多仓库。一个环境不能同时配置 `pipeline` 与 `webhook`。
 
-多仓环境可选配 `dependsOn`（项目间依赖）与 `preflightMergeBranches`（构建分支预合并检查）。同一依赖波次内保持原有阶段并行；被依赖服务的 Server 成功后才进入调用方波次。执行输出 `resume_state`；失败后用 `--resume --state-file <路径>` 从已记录的运行 ID 续跑，仍失败的运行可在云效重试任务后续跑，或显式追加 `--retry-failed` 创建新运行。续跑会核对冻结计划和远端环境分支 SHA。
+多仓发布的先后关系与额外构建分支预检由本次改动决定，不写入固定环境配置。本次需要时重复传入 `--depends-on <consumer:provider>` 和 `--preflight-merge-branch <project:branch>`；未指定则不附加项目间顺序或额外预合并检查。同一依赖波次内保持原有阶段并行；被依赖服务的 Server 成功后才进入调用方波次。执行输出 `resume_state`；失败后使用相同发布参数及 `--resume --state-file <路径>` 从已记录的运行 ID 续跑，仍失败的运行可在云效重试任务后续跑，或显式追加 `--retry-failed` 创建新运行。续跑会核对冻结计划和远端环境分支 SHA。
 
 推荐使用配置 Skill 生成，内容如下：
 

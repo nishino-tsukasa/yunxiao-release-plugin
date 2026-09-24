@@ -404,23 +404,21 @@ const common = {
     repository: {
       ...common,
       environments: { fat: {
-        branch: 'fat/fat', dependsOn: ['monkey-wx'], preflightMergeBranches: ['fat/fat_jdk17'],
+        branch: 'fat/fat', dependsOn: ['monkey-wx'],
         steps: [{ type: 'promote-branch' }],
       } },
     },
   });
   try {
-    const fat = resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env).environments.fat;
-    assert.deepEqual(fat.dependsOn, ['monkey-wx']);
-    assert.deepEqual(fat.preflightMergeBranches, ['fat/fat_jdk17']);
+    assert.throws(() => resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env), /不是固定配置/);
     writeJson(resolve(fixture.root, 'config/yunxiao-release/global-repositories.json'), {
       schemaVersion: 1,
       repositories: { 'example.com/team/backend-app': {
         ...common,
-        environments: { fat: { branch: 'fat/fat', dependsOn: ['monkey-wx', 'monkey-wx'], steps: [] } },
+        environments: { fat: { branch: 'fat/fat', preflightMergeBranches: ['fat/fat_jdk17'], steps: [] } },
       } },
     });
-    assert.throws(() => resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env), /dependsOn 不能重复/);
+    assert.throws(() => resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env), /不是固定配置/);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

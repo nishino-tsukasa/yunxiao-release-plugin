@@ -5,8 +5,8 @@ import { resolve } from 'node:path';
 
 import { resolveReleaseConfiguration } from '../release-configuration.mjs';
 
-const [repoArg, sourceBranch, environmentName = 'fat'] = process.argv.slice(2);
-if (!repoArg || !sourceBranch) throw new Error('用法: preflight-merge-branches.mjs <repo> <source-branch> [environment]');
+const [repoArg, sourceBranch, environmentName = 'fat', ...branches] = process.argv.slice(2);
+if (!repoArg || !sourceBranch) throw new Error('用法: preflight-merge-branches.mjs <repo> <source-branch> <environment> [build-branch ...]');
 const repo = resolve(repoArg);
 const profile = resolveReleaseConfiguration(repo);
 const environment = profile.environments[environmentName];
@@ -34,7 +34,6 @@ const previewMerge = (left, right, label) => {
 };
 
 try {
-  const branches = environment.preflightMergeBranches ?? [];
   if (!branches.length) {
     console.log(`RESULT status=skipped project=${profile.project} preflight_branches=none`);
   } else {

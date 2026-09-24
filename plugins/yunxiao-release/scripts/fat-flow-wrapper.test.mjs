@@ -14,7 +14,7 @@ const fatFlow = resolve(scripts, 'fat-flow');
 mkdirSync(fatFlow, { recursive: true });
 copyFileSync(source, resolve(fatFlow, 'run-full-fat-flow-deploy.sh'));
 writeFileSync(resolve(fatFlow, 'run-fat-flow.sh'), '#!/usr/bin/env bash\nif [[ -n "${GIT_FLOW_MARKER:-}" ]]; then touch "$GIT_FLOW_MARKER"; fi\nexit 0\n');
-writeFileSync(resolve(fatFlow, 'preflight-merge-branches.mjs'), '#!/usr/bin/env node\nprocess.exit(0);\n');
+writeFileSync(resolve(fatFlow, 'preflight-merge-branches.mjs'), '#!/usr/bin/env node\nimport { appendFileSync } from "node:fs";\nif (process.env.PREFLIGHT_CAPTURE) appendFileSync(process.env.PREFLIGHT_CAPTURE, `${process.argv.slice(2).join("|")}\\n`);\n');
 writeFileSync(resolve(fatFlow, 'plan-changed-fat-flow.sh'), '#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" > "$CAPTURE_PATH"\nif [[ " $* " == *" --validate "* ]]; then exit "${VALIDATE_EXIT:-0}"; fi\n');
 writeFileSync(resolve(scripts, 'release-configuration-cli.mjs'), `#!/usr/bin/env node
 const command = process.argv[2];
@@ -54,14 +54,34 @@ try {
   mkdirSync(repository);
   spawnSync('git', ['init', '-q'], { cwd: repository });
   const repositoryCapture = resolve(root, 'repository.args');
+  const preflightCapture = resolve(root, 'preflight.args');
   const repositoryResult = run(['--branch', 'feature/demo', '--repo', repository], {
-    CAPTURE_PATH: repositoryCapture, CLIENT_EXIT: '1', PROJECT_ID: 'canonical-service',
+    CAPTURE_PATH: repositoryCapture, CLIENT_EXIT: '1', PROJECT_ID: 'canonical-service', PREFLIGHT_CAPTURE: preflightCapture,
   });
   assert.equal(repositoryResult.status, 0, repositoryResult.stderr);
   const repositoryArgs = readFileSync(repositoryCapture, 'utf8').trim().split('\n');
   assert.deepEqual(repositoryArgs.slice(0, 6), [
     '--repos', repository, '--client-repos', '', '--branch', 'feature/demo',
   ]);
+  assert.equal(existsSync(preflightCapture), false);
+
+  const releaseInputCapture = resolve(root, 'release-input.args');
+  const releaseInputResult = run([
+    '--branch', 'feature/demo', '--repo', repository,
+    '--depends-on', 'canonical-service:provider',
+    '--preflight-merge-branch', 'canonical-service:fat_jdk17',
+  ], { CAPTURE_PATH: releaseInputCapture, CLIENT_EXIT: '1', PROJECT_ID: 'canonical-service', PREFLIGHT_CAPTURE: preflightCapture });
+  assert.equal(releaseInputResult.status, 0, releaseInputResult.stderr);
+  const releaseInputArgs = readFileSync(releaseInputCapture, 'utf8').trim().split('\n');
+  assert.deepEqual(releaseInputArgs.slice(releaseInputArgs.indexOf('--depends-on'), releaseInputArgs.indexOf('--branch')), [
+    '--depends-on', 'canonical-service:provider', '--preflight-merge-branch', 'canonical-service:fat_jdk17',
+  ]);
+  assert.equal(readFileSync(preflightCapture, 'utf8').trim(), `${repository}|feature/demo|fat|fat_jdk17`);
+  const projectPreflightResult = run([
+    '--branch', 'feature/demo', '--project', 'service-a', '--preflight-merge-branch', 'service-a:fat_jdk17',
+  ], { CAPTURE_PATH: resolve(root, 'project-preflight.args') });
+  assert.equal(projectPreflightResult.status, 1);
+  assert.match(projectPreflightResult.stderr, /需要 --repo/);
 
   const gitMarker = resolve(root, 'git-flow-ran');
   const invalidResult = run(['--branch', 'feature/demo', '--repo', repository], {

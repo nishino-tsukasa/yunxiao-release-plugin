@@ -45,10 +45,10 @@ try {
     reviewerMode: 'ask', reviewerUserIds: [], versionFile: null, announcementFile: null,
     localConfigFile: '.agents/local.json', runtimeFile: '.agents/runtime.json', commentsFile: '.agents/comments.md',
     validationCommands: ['git diff --check'],
-    environments: { fat: { branch: 'fat/fat', preflightMergeBranches: ['fat/fat_jdk17'], steps: [{ type: 'promote-branch' }] } },
+    environments: { fat: { branch: 'fat/fat', steps: [{ type: 'promote-branch' }] } },
   }));
   const env = { ...process.env, XDG_CONFIG_HOME: resolve(root, 'config') };
-  const conflicted = spawnSync('node', [script, repo, 'feature'], { encoding: 'utf8', env });
+  const conflicted = spawnSync('node', [script, repo, 'feature', 'fat', 'fat/fat_jdk17'], { encoding: 'utf8', env });
   assert.equal(conflicted.status, 1);
   assert.match(conflicted.stderr, /预合并冲突/);
   assert.match(conflicted.stderr, /code.txt/);
@@ -59,7 +59,7 @@ try {
   git('add', 'other.txt');
   git('commit', '-qm', 'jdk17 other file');
   git('push', '-q', '--force', 'origin', 'fat/fat_jdk17');
-  const compatible = spawnSync('node', [script, repo, 'feature'], { encoding: 'utf8', env });
+  const compatible = spawnSync('node', [script, repo, 'feature', 'fat', 'fat/fat_jdk17'], { encoding: 'utf8', env });
   assert.equal(compatible.status, 0, compatible.stderr);
   assert.match(compatible.stdout, /status=success/);
 } finally {
