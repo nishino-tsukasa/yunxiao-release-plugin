@@ -44,6 +44,7 @@ const profile = (repositoryKey, steps) => ({
     })),
   });
   assert.deepEqual(plan.stages[0].steps.map(({ pipelineId }) => pipelineId), ['100', '101', '100']);
+  assert.deepEqual(plan.stages[0].steps[0].candidates.map(({ pipelineId }) => pipelineId), ['100', '101']);
 }
 
 {

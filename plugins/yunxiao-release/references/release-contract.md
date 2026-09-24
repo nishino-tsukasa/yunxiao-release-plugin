@@ -57,7 +57,7 @@
 
 旧 `testDeployments` 以及旧 `projects.json` 中 FAT 配置的 `projectType`、`fatTargetBranch`、`commitMessagePattern`、`clientDetection` 和 `fatFlow` 可继续使用。Release Configuration module 只在兼容边界将其转换为 `environments`；Environment Release Planner 始终只消费统一后的 profile，不包含项目名称或前后端识别规则。新的拆分配置直接提供 `environments`，不得把 `fatFlow` 写入 `global-defaults.json`。
 
-含 `pipeline` 步骤时，有效配置必须提供完整 `releaseExecution`：`pollIntervalSeconds` 以及实际使用阶段的 `initialWaitSeconds`、`timeoutSeconds`，均为非负整数。全局仓库配置通常复用全局默认值；需要脱离全局配置独立工作的项目文件可自带相同字段。同一次多仓发布的执行参数不一致时必须在触发前失败。`pipeline.stage` 只允许 `frontend-client-deploy`、`backend-client-package`、`backend-server-deploy`。一个 Backend Client 步骤可用 `candidates` 提供多条等价流水线，Planner 按当前计划负载选择。旧阶段名和旧执行字段只在读取边界转换。
+含 `pipeline` 步骤时，有效配置必须提供完整 `releaseExecution`：`pollIntervalSeconds` 以及实际使用阶段的 `initialWaitSeconds`、`timeoutSeconds`，均为非负整数。全局仓库配置通常复用全局默认值；需要脱离全局配置独立工作的项目文件可自带相同字段。同一次多仓发布的执行参数不一致时必须在触发前失败。`pipeline.stage` 只允许 `frontend-client-deploy`、`backend-client-package`、`backend-server-deploy`。一个 Backend Client 步骤可用 `candidates` 提供多条等价流水线，执行前按云效 RUNNING 实例筛选空闲候选，再按本次计划负载均衡；均忙时等待到阶段超时，查询失败时不盲目触发。实际选择写入续跑状态并固定。旧阶段名和旧执行字段只在读取边界转换。
 
 ## 环境发布
 
@@ -84,6 +84,8 @@
 - 自动发布：`branch` 配合 `promote-branch` 与后续 `webhook` 或 `pipeline` 步骤；待发布的远端源分支使用 MR 配置的 `targetBranch`。
 - 手动发布：`branch` 为 `null`，使用 `manual-link` 步骤；只返回人工发布入口，不执行 Git、流水线或 webhook。
 - `deploy-environment` 与 `yunxiao-release fat-flow` 共用 Planner 和 Pipeline Executor；前者生成单仓计划，后者生成多仓计划。一个环境不能同时配置 `pipeline` 与 `webhook`。
+- 多仓 FAT 可在每个环境声明 `dependsOn` 项目名，Planner 按依赖波次执行；每个波次先 Client 后 Server，同波次的不同流水线仍可并行。可声明 `preflightMergeBranches`，在任何推送前模拟环境分支与指定构建分支的合并并检查冲突。
+- 多仓流水线执行会输出 `resume_state`。续跑使用相同仓库、源分支和环境，以及 `--resume --state-file <resume_state>`；插件核对冻结计划与远端环境分支提交，只复用已成功的运行 ID。失败运行需先在云效重试任务，或显式使用 `--retry-failed` 创建新运行；触发结果未知时停止人工核对，避免重复触发。Git 推送阶段失败时重新预检并执行，已合入的分支不会重复生成合并提交。
 - 所有 URL 只允许 HTTP(S)。每次只发布一个环境，不根据 `fat`、`uat`、`production` 等名称猜测模式。
 - 自动发布的 webhook 请求固定为 `POST application/json`。`feishuId` 已配置时请求体是 `{ "feishuId": "...", "branch": "<targetBranch>" }`，未配置时仅发送 `{ "branch": "<targetBranch>" }`，不阻断发布。
 

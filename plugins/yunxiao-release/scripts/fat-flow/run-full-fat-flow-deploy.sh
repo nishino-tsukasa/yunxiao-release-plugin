@@ -11,10 +11,14 @@ SCRIPT_CLIENT_REPOS=()
 SCRIPT_MANUAL_CLIENT_PROJECTS=()
 SCRIPT_SERVER_ONLY=0
 SCRIPT_VERBOSE=0
+SCRIPT_RESUME=0
+SCRIPT_RETRY_FAILED=0
+SCRIPT_STATE_FILE=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_FAT_FLOW_SCRIPT="${SCRIPT_DIR}/run-fat-flow.sh"
 PLAN_DEPLOY_SCRIPT="${SCRIPT_DIR}/plan-changed-fat-flow.sh"
 CONFIG_HELPER="${SCRIPT_DIR}/../release-configuration-cli.mjs"
+PREFLIGHT_SCRIPT="${SCRIPT_DIR}/preflight-merge-branches.mjs"
 
 # 展示脚本用法，避免固定流程入口传参不完整时难以排查。
 usage() {
@@ -23,6 +27,7 @@ Usage:
   run-full-fat-flow-deploy.sh --branch <source-branch> --repo <repo-path> [--repo <repo-path> ...] [--verbose]
   run-full-fat-flow-deploy.sh --branch <source-branch> --project <project-name> [--project <project-name> ...] [--client-project <project-name> ...] [--verbose]
   run-full-fat-flow-deploy.sh --branch <source-branch> --project <project-name> [--project <project-name> ...] --server-only [--verbose]
+  续跑时追加 --resume --state-file <上次输出的路径> [--retry-failed]
 EOF
 }
 
@@ -89,6 +94,18 @@ parse_args() {
         SCRIPT_SERVER_ONLY=1
         shift
         ;;
+      --state-file)
+        SCRIPT_STATE_FILE="$2"
+        shift 2
+        ;;
+      --resume)
+        SCRIPT_RESUME=1
+        shift
+        ;;
+      --retry-failed)
+        SCRIPT_RETRY_FAILED=1
+        shift
+        ;;
       --verbose)
         SCRIPT_VERBOSE=1
         shift
@@ -128,6 +145,15 @@ parse_args() {
     usage
     exit 1
   fi
+  if [[ "$SCRIPT_RESUME" == "1" && -z "$SCRIPT_STATE_FILE" ]]; then
+    fail "--resume 必须同时提供 --state-file"
+  fi
+  if [[ "$SCRIPT_RETRY_FAILED" == "1" && "$SCRIPT_RESUME" != "1" ]]; then
+    fail "--retry-failed 只能与 --resume 一起使用"
+  fi
+  if [[ "$SCRIPT_RESUME" != "1" && -n "$SCRIPT_STATE_FILE" && ( -e "$SCRIPT_STATE_FILE" || -e "${SCRIPT_STATE_FILE}.plan.json" ) ]]; then
+    fail "执行状态文件已存在，请使用 --resume 或更换路径"
+  fi
 }
 
 # 校验依赖脚本存在，避免运行到中途才暴露环境问题。
@@ -141,6 +167,36 @@ ensure_scripts_exist() {
   fi
   if [[ ! -f "$CONFIG_HELPER" ]]; then
     fail "release-configuration-cli.mjs 不存在"
+  fi
+  if [[ ! -f "$PREFLIGHT_SCRIPT" ]]; then
+    fail "preflight-merge-branches.mjs 不存在"
+  fi
+}
+
+# 在任何远端推送前模拟环境目标分支与显式配置的二级合并分支。
+preflight_repos() {
+  local repo
+  SCRIPT_STEP="preflight_merge_branches"
+  for repo in "${SCRIPT_REPOS[@]}"; do
+    node "$PREFLIGHT_SCRIPT" "$repo" "$SCRIPT_BRANCH" fat || fail "分支预合并检查失败: $repo"
+  done
+}
+
+# 在任何远端推送前确认流水线映射完整、项目依赖无环。
+validate_release_plan() {
+  local projects_csv
+  local client_projects_csv
+  local repos_csv
+  local client_repos_csv
+  SCRIPT_STEP="validate_release_plan"
+  projects_csv="$(join_csv "${SCRIPT_PROJECTS[@]}")"
+  client_projects_csv="$(join_csv "${SCRIPT_CLIENT_PROJECTS[@]-}")"
+  if [[ ${#SCRIPT_REPOS[@]} -gt 0 ]]; then
+    repos_csv="$(join_csv "${SCRIPT_REPOS[@]}")"
+    client_repos_csv="$(join_csv "${SCRIPT_CLIENT_REPOS[@]-}")"
+    "$PLAN_DEPLOY_SCRIPT" --repos "$repos_csv" --client-repos "$client_repos_csv" --branch "$SCRIPT_BRANCH" --validate || fail "发布计划校验失败"
+  else
+    "$PLAN_DEPLOY_SCRIPT" --projects "$projects_csv" --client-projects "$client_projects_csv" --branch "$SCRIPT_BRANCH" --validate || fail "发布计划校验失败"
   fi
 }
 
@@ -312,6 +368,15 @@ run_single_deploy() {
   else
     identity_args=(--projects "$projects_csv" --client-projects "$client_projects_csv")
   fi
+  if [[ -n "$SCRIPT_STATE_FILE" ]]; then
+    identity_args+=(--state-file "$SCRIPT_STATE_FILE")
+  fi
+  if [[ "$SCRIPT_RESUME" == "1" ]]; then
+    identity_args+=(--resume)
+  fi
+  if [[ "$SCRIPT_RETRY_FAILED" == "1" ]]; then
+    identity_args+=(--retry-failed)
+  fi
   log_info "开始执行统一 FAT 部署: projects=${projects_csv} clientProjects=${client_projects_csv:-none}"
   log_progress "stage=deploy status=started projects=${projects_csv} clientProjects=${client_projects_csv:-none} order=frontend-client-deploy-then-backend-client-package-then-backend-server-deploy"
   if [[ "$SCRIPT_VERBOSE" == "1" ]]; then
@@ -345,8 +410,14 @@ main() {
   else
     normalize_projects
   fi
-  collect_client_projects
-  run_git_fat_flow_for_each_repo
+  if [[ "$SCRIPT_RESUME" != "1" ]]; then
+    collect_client_projects
+    validate_release_plan
+    if [[ ${#SCRIPT_REPOS[@]} -gt 0 ]]; then
+      preflight_repos
+    fi
+    run_git_fat_flow_for_each_repo
+  fi
   run_single_deploy
   finish_successfully
 }

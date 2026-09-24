@@ -280,9 +280,21 @@ const normalizeEnvironments = (value) => {
     if (steps.some(({ type }) => type === 'pipeline') && steps.some(({ type }) => type === 'webhook')) {
       fail(`environments.${name} 不能同时配置 pipeline 和 webhook`);
     }
+    const normalizeNames = (field) => {
+      const names = environment[field] ?? [];
+      if (!Array.isArray(names) || names.some((item) => typeof item !== 'string' || !item.trim())) {
+        fail(`environments.${name}.${field} 必须是非空字符串数组`);
+      }
+      const normalized = names.map((item) => item.trim());
+      if (new Set(normalized).size !== normalized.length) fail(`environments.${name}.${field} 不能重复`);
+      return normalized;
+    };
     return [name, {
       branch: typeof branch === 'string' ? branch.trim() : null,
       steps,
+      ...(environment.dependsOn !== undefined ? { dependsOn: normalizeNames('dependsOn') } : {}),
+      ...(environment.preflightMergeBranches !== undefined
+        ? { preflightMergeBranches: normalizeNames('preflightMergeBranches') } : {}),
     }];
   }));
 };

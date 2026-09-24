@@ -182,7 +182,7 @@ MR/环境分支、提交规则、流水线和 Client 触发条件均是仓库数
 | `runtimeFile` | `.agents/runtime/yunxiao-release-mr.json` | 当前分支和 MR 的运行状态，必须是项目内相对路径并被 Git 忽略。 |
 | `commentsFile` | `.agents/runtime/yunxiao-release-comments.md` | MR 评论处理记录，必须是项目内相对路径并被 Git 忽略。 |
 | `validationCommands` | 配置必填 | 创建 MR 和合并前准备阶段执行的最低验证命令。根据项目规则、CI 和现有脚本配置，必须是非空数组；全部命令会纳入对应流程的一次总确认。 |
-| `environments` | `{}` | 统一环境发布配置。每个环境显式声明目标分支和有序步骤；支持 `promote-branch`、`pipeline`、`webhook`、`manual-link`。`pipeline.stage` 只允许 `frontend-client-deploy`、`backend-client-package`、`backend-server-deploy`；可用 `candidates` 声明等价流水线并由 Planner 均衡选择。 |
+| `environments` | `{}` | 统一环境发布配置。每个环境显式声明目标分支和有序步骤；支持 `promote-branch`、`pipeline`、`webhook`、`manual-link`。`pipeline.stage` 只允许 `frontend-client-deploy`、`backend-client-package`、`backend-server-deploy`；Backend Client 可用 `candidates` 声明等价流水线，执行前优先选择空闲候选。 |
 | `testDeployments` | `[]` | 已发布旧格式，继续兼容；读取时转换为 `environments`，新配置不再使用。 |
 
 ## 成员身份与 Token
@@ -199,6 +199,8 @@ MR/环境分支、提交规则、流水线和 Client 触发条件均是仓库数
 `yunxiao-release fat-flow` 和单仓库环境发布共用同一套 `environments` 配置、Environment Release Planner 与 Pipeline Executor。`pipeline` 步骤通过 `stage` 表示 `frontend-client-deploy`、`backend-client-package` 或 `backend-server-deploy`，通过可选 `when.changedPaths` 表示路径触发条件；插件不再维护独立的前后端识别规则。旧 `projects.json` 中的 `fatFlow` 及仓库 `projectType`、`fatTargetBranch`、`clientDetection` 仅作为向后兼容输入，由 Release Configuration module 转换为同一计划；新的拆分全局配置禁止这些旧字段。插件包不携带真实项目名、分支或流水线 ID。
 
 `deploy-environment` 可执行单仓库 `promote-branch + pipeline`、`promote-branch + webhook`，或返回 `manual-link`；`yunxiao-release fat-flow` 使用同一 Planner 与 Pipeline Executor 编排多仓库。一个环境不能同时配置 `pipeline` 与 `webhook`。
+
+多仓环境可选配 `dependsOn`（项目间依赖）与 `preflightMergeBranches`（构建分支预合并检查）。同一依赖波次内保持原有阶段并行；被依赖服务的 Server 成功后才进入调用方波次。执行输出 `resume_state`；失败后用 `--resume --state-file <路径>` 从已记录的运行 ID 续跑，仍失败的运行可在云效重试任务后续跑，或显式追加 `--retry-failed` 创建新运行。续跑会核对冻结计划和远端环境分支 SHA。
 
 推荐使用配置 Skill 生成，内容如下：
 

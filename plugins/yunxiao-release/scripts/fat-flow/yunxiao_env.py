@@ -241,6 +241,23 @@ def _run_flow_get_pipeline_run(args: list[str]) -> Any:
     )
 
 
+def _run_flow_list_pipeline_runs(args: list[str]) -> Any:
+    """按状态查询指定流水线的运行实例。"""
+    organization_id = resolve_organization_id()
+    pipeline_id = _parse_option_value(args, "--pipeline-id")
+    if not pipeline_id:
+        raise RuntimeError("flow-list-pipeline-runs 缺少 --pipeline-id")
+    query = {"page": "1", "perPage": "30"}
+    status = _parse_option_value(args, "--status")
+    if status:
+        query["status"] = status
+    return http_json_request(
+        "GET",
+        f"/oapi/v1/flow/organizations/{organization_id}/pipelines/{pipeline_id}/runs",
+        query=query,
+    )
+
+
 def run_devops(args: list[str]) -> subprocess.CompletedProcess[str]:
     """兼容旧的 devops 调用签名，但底层改为直连云效 HTTP API。"""
     try:
@@ -253,6 +270,8 @@ def run_devops(args: list[str]) -> subprocess.CompletedProcess[str]:
             return _http_completed_process(args, _run_flow_create_pipeline_run(args))
         if command == "flow-get-pipeline-run":
             return _http_completed_process(args, _run_flow_get_pipeline_run(args))
+        if command == "flow-list-pipeline-runs":
+            return _http_completed_process(args, _run_flow_list_pipeline_runs(args))
         raise RuntimeError(f"暂不支持的云效命令：{' '.join(args)}")
     except Exception as error:
         return _http_failed_process(args, error)

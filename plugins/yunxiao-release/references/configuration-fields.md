@@ -74,6 +74,10 @@
 |---|---|---|
 | `branch` | string\|null | 自动发布的环境目标分支；纯人工入口为 `null` |
 | `steps` | object[] | 按顺序声明的环境动作 |
+| `dependsOn` | string[] | 多仓发布中本项目依赖的项目名；两者同时选中时，先完成依赖项目的 Client 和 Server，再发布本项目。未选中的依赖不生成步骤 |
+| `preflightMergeBranches` | string[] | 发布前模拟把本次环境目标分支合入这些显式分支；有冲突则在任何远端推送前停止。例如 JDK17 构建使用的专属分支 |
+
+`dependsOn` 和 `preflightMergeBranches` 都是当前环境的可选字段，使用非空、不重复的字符串。依赖项目名取仓库配置解析后的 `project`；被选择项目之间若形成环，计划阶段停止。预检目标分支必须已存在于配置的 Git remote，不从项目类型或分支命名推断。
 
 ## Step 字段
 
@@ -105,7 +109,7 @@
 | `pipelineId` | string | 是 | 云效流水线 ID |
 | `params` | object | 是 | 传给云效流水线 API 的参数 |
 | `when.changedPaths` | string[] | 否 | 仅在指定路径前缀有改动时执行；`when` 不接受其他字段 |
-| `candidates` | object[] | 否 | 等价流水线候选；Planner 按当前计划负载选择一个 |
+| `candidates` | object[] | 否 | 等价流水线候选；Backend Client 执行前查询运行占用，优先选择空闲候选并按本次计划负载均衡；均忙时等待空闲或超时 |
 
 同一个项目、同一个环境、同一实际流水线只能选择 `pipeline` 或 `webhook` 一种触发方式。需要查询结果、超时控制或多仓编排时使用 `pipeline`。
 

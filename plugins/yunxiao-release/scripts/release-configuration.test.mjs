@@ -398,4 +398,32 @@ const common = {
   }
 }
 
+{
+  const fixture = createFixture({
+    defaults: { organizationId: 'org-1' },
+    repository: {
+      ...common,
+      environments: { fat: {
+        branch: 'fat/fat', dependsOn: ['monkey-wx'], preflightMergeBranches: ['fat/fat_jdk17'],
+        steps: [{ type: 'promote-branch' }],
+      } },
+    },
+  });
+  try {
+    const fat = resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env).environments.fat;
+    assert.deepEqual(fat.dependsOn, ['monkey-wx']);
+    assert.deepEqual(fat.preflightMergeBranches, ['fat/fat_jdk17']);
+    writeJson(resolve(fixture.root, 'config/yunxiao-release/global-repositories.json'), {
+      schemaVersion: 1,
+      repositories: { 'example.com/team/backend-app': {
+        ...common,
+        environments: { fat: { branch: 'fat/fat', dependsOn: ['monkey-wx', 'monkey-wx'], steps: [] } },
+      } },
+    });
+    assert.throws(() => resolveReleaseConfiguration(fixture.repositoryRoot, fixture.env), /dependsOn 不能重复/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+}
+
 console.log('release configuration self-test passed');

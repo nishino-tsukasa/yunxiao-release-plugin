@@ -13,8 +13,9 @@ const scripts = resolve(root, 'scripts');
 const fatFlow = resolve(scripts, 'fat-flow');
 mkdirSync(fatFlow, { recursive: true });
 copyFileSync(source, resolve(fatFlow, 'run-full-fat-flow-deploy.sh'));
-writeFileSync(resolve(fatFlow, 'run-fat-flow.sh'), '#!/usr/bin/env bash\nexit 0\n');
-writeFileSync(resolve(fatFlow, 'plan-changed-fat-flow.sh'), '#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" > "$CAPTURE_PATH"\n');
+writeFileSync(resolve(fatFlow, 'run-fat-flow.sh'), '#!/usr/bin/env bash\nif [[ -n "${GIT_FLOW_MARKER:-}" ]]; then touch "$GIT_FLOW_MARKER"; fi\nexit 0\n');
+writeFileSync(resolve(fatFlow, 'preflight-merge-branches.mjs'), '#!/usr/bin/env node\nprocess.exit(0);\n');
+writeFileSync(resolve(fatFlow, 'plan-changed-fat-flow.sh'), '#!/usr/bin/env bash\nprintf \'%s\\n\' "$@" > "$CAPTURE_PATH"\nif [[ " $* " == *" --validate "* ]]; then exit "${VALIDATE_EXIT:-0}"; fi\n');
 writeFileSync(resolve(scripts, 'release-configuration-cli.mjs'), `#!/usr/bin/env node
 const command = process.argv[2];
 if (command === 'get') {
@@ -61,6 +62,25 @@ try {
   assert.deepEqual(repositoryArgs.slice(0, 6), [
     '--repos', repository, '--client-repos', '', '--branch', 'feature/demo',
   ]);
+
+  const gitMarker = resolve(root, 'git-flow-ran');
+  const invalidResult = run(['--branch', 'feature/demo', '--repo', repository], {
+    CAPTURE_PATH: resolve(root, 'invalid.args'), CLIENT_EXIT: '1', PROJECT_ID: 'canonical-service',
+    VALIDATE_EXIT: '3', GIT_FLOW_MARKER: gitMarker,
+  });
+  assert.equal(invalidResult.status, 1);
+  assert.match(invalidResult.stderr, /发布计划校验失败/);
+  assert.equal(existsSync(gitMarker), false);
+
+  const resumeCapture = resolve(root, 'resume.args');
+  const resumeResult = run([
+    '--branch', 'feature/demo', '--repo', repository, '--resume', '--state-file', resolve(root, 'run-state.json'),
+    '--retry-failed',
+  ], { CAPTURE_PATH: resumeCapture, CLIENT_EXIT: '2', PROJECT_ID: 'canonical-service' });
+  assert.equal(resumeResult.status, 0, resumeResult.stderr);
+  const resumeArgs = readFileSync(resumeCapture, 'utf8').trim().split('\n');
+  assert.deepEqual(resumeArgs.slice(resumeArgs.indexOf('--state-file'), resumeArgs.indexOf('--branch')),
+    ['--state-file', resolve(root, 'run-state.json'), '--resume', '--retry-failed']);
   console.log('fat flow wrapper self-test passed');
 } finally {
   rmSync(root, { recursive: true, force: true });

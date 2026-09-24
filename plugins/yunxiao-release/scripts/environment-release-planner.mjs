@@ -64,6 +64,11 @@ export const planEnvironmentRelease = ({ environment, repositories, allowedStepT
         }
         const { when: _when, stage: _stage, alternatives: _alternatives, ...rest } = selected;
         planned = { ...common, ...rest };
+        if (isClientStep && Array.isArray(step.alternatives)) {
+          planned.candidates = step.alternatives.map(({ pipelineName, pipelineId, params }) => ({
+            pipelineName, pipelineId, params,
+          }));
+        }
       }
       const name = releaseStageName(step);
       if (!stages.has(name)) stages.set(name, []);
