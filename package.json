@@ -1,6 +1,6 @@
 {
   "name": "yunxiao-release",
-  "version": "0.8.4",
+  "version": "0.9.0",
   "description": "Codex 和 Claude Code 的云效单 MR 与环境发布插件安装器。",
   "type": "module",
   "scripts": {
