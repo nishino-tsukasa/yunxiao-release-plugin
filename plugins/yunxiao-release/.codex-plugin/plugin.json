@@ -1,6 +1,6 @@
 {
   "name": "yunxiao-release",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "通过阿里云云效官方 MCP 组织单 MR 发版流程，并支持测试与生产环境发布入口。",
   "author": {
     "name": "FlyAboveGrass"
